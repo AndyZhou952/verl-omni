@@ -21,19 +21,6 @@ Furthermore, you can learn the development plan and roadmap via the [RFC: Multi-
 
 ## Developing
 
-Install the dependencies in this order to avoid conflicts:
-
-```bash
-# 1. vLLM and vLLM-Omni rollout backend
-pip install "vllm==0.18" "vllm-omni==0.18"
-
-# 2. verl (latest main)
-pip install git+https://github.com/verl-project/verl.git@main
-
-# 3. VeRL-Omni (editable for development)
-pip install -e .
-```
-
 For the full dependency setup, see the [installation doc](docs/start/install.md).
 
 ## Code Linting and Formatting
@@ -83,6 +70,14 @@ python -m http.server -d _build/html/
 ```
 
 Open your browser at http://localhost:8000 to explore the docs.
+
+## Model Integrations
+
+To integrate a new diffusion model for FlowGRPO training (new
+`DiffusionModelBase` + `VllmOmniPipelineBase` pair), follow the step-by-step
+guide:
+
+- [How to Integrate a New Diffusion Model for FlowGRPO Training](docs/contributing/integrating_a_diffusion_model.md)
 
 ## Pull Requests & Code Reviews
 

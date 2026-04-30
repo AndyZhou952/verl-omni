@@ -23,12 +23,12 @@ from verl import DataProto
 from verl.single_controller.ray import RayClassWithInitArgs, RayResourcePool, RayWorkerGroup
 from verl.utils import tensordict_utils as tu
 from verl.workers.config import TrainingWorkerConfig
-from verl.workers.utils.padding import embeds_padding_2_no_padding
 
 from verl_omni.pipelines.utils import build_scheduler
 from verl_omni.workers.config import DiffusionModelConfig, FSDPDiffusionActorConfig
 from verl_omni.workers.engine_workers import TrainingWorker
 from verl_omni.workers.utils.losses import diffusion_loss
+from verl_omni.workers.utils.padding import embeds_padding_2_no_padding
 
 
 def create_training_config(model_type, strategy, device_count, model):
@@ -53,7 +53,7 @@ def create_training_config(model_type, strategy, device_count, model):
                     "tokenizer_path=" + tokenizer_path,
                     "lora_rank=8",
                     "lora_alpha=16",
-                    "true_cfg_scale=4.0",
+                    "pipeline.true_cfg_scale=4.0",
                     "algo.noise_level=1.2",
                     "algo.sde_type=sde",
                 ],

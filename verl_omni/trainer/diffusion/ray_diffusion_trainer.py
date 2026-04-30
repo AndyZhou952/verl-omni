@@ -24,6 +24,7 @@ from pprint import pprint
 from typing import Any, Optional
 
 import numpy as np
+import ray
 import torch
 from omegaconf import OmegaConf, open_dict
 from PIL import Image
@@ -36,7 +37,6 @@ from verl.experimental.dataset.sampler import AbstractCurriculumSampler
 from verl.protocol import pad_dataproto_to_divisor, unpad_dataproto
 from verl.single_controller.ray import RayClassWithInitArgs, RayWorkerGroup, ResourcePoolManager
 from verl.single_controller.ray.base import create_colocated_worker_cls
-from verl.trainer.config import DiffusionAlgoConfig
 from verl.trainer.ppo.metric_utils import compute_variance_proxy_metrics, process_validation_metrics
 from verl.trainer.ppo.reward import extract_reward
 from verl.trainer.ppo.utils import Role, WorkerType, need_reference_policy, need_reward_model
@@ -48,14 +48,15 @@ from verl.utils.import_utils import load_class_from_fqn
 from verl.utils.metric import reduce_metrics
 from verl.utils.py_functional import rename_dict
 from verl.utils.tracking import ValidationGenerationsLogger
-from verl.workers.utils.padding import embeds_padding_2_no_padding
 
+from verl_omni.trainer.config import DiffusionAlgoConfig
 from verl_omni.trainer.diffusion.diffusion_algos import DiffusionAdvantageEstimator, get_diffusion_adv_estimator_fn
 from verl_omni.trainer.diffusion.diffusion_metric_utils import (
     compute_data_metrics_diffusion,
     compute_throughput_metrics_diffusion,
     compute_timing_metrics_diffusion,
 )
+from verl_omni.workers.utils.padding import embeds_padding_2_no_padding
 
 
 def compute_advantage(
@@ -184,7 +185,7 @@ class RayFlowGRPOTrainer:
         Creates the train and validation dataloaders.
         """
         # TODO: we have to make sure the batch size is divisible by the dp size
-        from verl.trainer.main_ppo import create_rl_dataset, create_rl_sampler
+        from verl_omni.utils.dataset.rl_dataset import create_rl_dataset, create_rl_sampler
 
         if train_dataset is None:
             train_dataset = create_rl_dataset(
@@ -207,7 +208,7 @@ class RayFlowGRPOTrainer:
         if train_sampler is None:
             train_sampler = create_rl_sampler(self.config.data, self.train_dataset)
         if collate_fn is None:
-            from verl.utils.dataset.rl_dataset import collate_fn as default_collate_fn
+            from verl_omni.utils.dataset.rl_dataset import collate_fn as default_collate_fn
 
             collate_fn = default_collate_fn
 
@@ -315,7 +316,9 @@ class RayFlowGRPOTrainer:
             scores = batch.batch["sample_level_scores"].sum(-1).cpu().tolist()
             sample_gts = [item.non_tensor_batch.get("reward_model", {}).get("ground_truth", None) for item in batch]
 
-            reward_extra_infos_to_dump = reward_extra_infos_dict.copy()
+            reward_extra_infos_to_dump = {
+                k: (v.tolist() if isinstance(v, np.ndarray) else v) for k, v in reward_extra_infos_dict.items()
+            }
             if "request_id" in batch.non_tensor_batch:
                 reward_extra_infos_to_dump.setdefault(
                     "request_id",
@@ -619,6 +622,10 @@ class RayFlowGRPOTrainer:
         else:
             from verl.experimental.agent_loop import AgentLoopManager
 
+            from verl_omni.agent_loop import DiffusionAgentLoopWorker
+
+            AgentLoopManager.agent_loop_workers_class = ray.remote(DiffusionAgentLoopWorker)
+
         # infrastructure overview: https://verl.readthedocs.io/en/latest/advance/reward_loop.html#architecture-design
         # agent_reward_loop: streaming reward computation with actor rollout
         # two conditions satisfied: (1) no reward model, or (2) reward model with extra resource pool
@@ -748,8 +755,8 @@ class RayFlowGRPOTrainer:
         batch_td = embeds_padding_2_no_padding(batch_td)
         metadata = {
             "compute_loss": False,
-            "height": self.config.actor_rollout_ref.model.height,
-            "width": self.config.actor_rollout_ref.model.width,
+            "height": self.config.actor_rollout_ref.model.pipeline.height,
+            "width": self.config.actor_rollout_ref.model.pipeline.width,
             "vae_scale_factor": self.config.actor_rollout_ref.model.get("vae_scale_factor", 8),
         }
         if self.ref_in_actor:
@@ -773,8 +780,8 @@ class RayFlowGRPOTrainer:
         tu.assign_non_tensor(
             batch_td,
             compute_loss=False,
-            height=self.config.actor_rollout_ref.model.height,
-            width=self.config.actor_rollout_ref.model.width,
+            height=self.config.actor_rollout_ref.model.pipeline.height,
+            width=self.config.actor_rollout_ref.model.pipeline.width,
             vae_scale_factor=self.config.actor_rollout_ref.model.get("vae_scale_factor", 8),
         )
         output = self.actor_rollout_wg.compute_log_prob(batch_td)
@@ -801,8 +808,8 @@ class RayFlowGRPOTrainer:
             epochs=ppo_epochs,
             seed=seed,
             dataloader_kwargs={"shuffle": shuffle},
-            height=self.config.actor_rollout_ref.model.height,
-            width=self.config.actor_rollout_ref.model.width,
+            height=self.config.actor_rollout_ref.model.pipeline.height,
+            width=self.config.actor_rollout_ref.model.pipeline.width,
             vae_scale_factor=self.config.actor_rollout_ref.model.get("vae_scale_factor", 8),
         )
 

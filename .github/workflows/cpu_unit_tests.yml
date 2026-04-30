@@ -14,6 +14,7 @@ on:
     branches:
       - main
       - v0.*
+    types: [opened, synchronize, reopened, labeled]
     paths:
       - "verl_omni/**"
       - "tests/**/*_on_cpu.py"
@@ -31,6 +32,9 @@ permissions:
 
 jobs:
   cpu_unit_tests:
+    if: >-
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'ready-for-ci')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -45,10 +49,11 @@ jobs:
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install dependencies (CPU-only torch)
+      - name: Install dependencies
         run: |
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          pip install --no-deps "verl @ git+https://github.com/verl-project/verl.git@main"
+          pip install --extra-index-url https://download.pytorch.org/whl/cpu "https://github.com/vllm-project/vllm/releases/download/v0.18.0/vllm-0.18.0+cpu-cp38-abi3-manylinux_2_35_x86_64.whl"
+          pip install "vllm-omni==0.18.0"
+          pip install --no-deps "verl @ git+https://github.com/verl-project/verl.git@a512e90fddcefb64baaa6384e9cf8571b6bfab0b"
           pip install -r requirements.txt
           pip install -r requirements-test.txt
           pip install --no-deps -e .
