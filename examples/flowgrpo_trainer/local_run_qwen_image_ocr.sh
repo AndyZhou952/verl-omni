@@ -21,10 +21,10 @@ python3 -m verl_omni.trainer.diffusion.main_flowgrpo \
     algorithm.adv_estimator=flow_grpo \
     data.train_files=$ocr_train_path \
     data.val_files=$ocr_test_path \
-    data.train_batch_size=32 \
+    data.train_batch_size=64 \
     data.max_prompt_length=256 \
     actor_rollout_ref.model.path=$model_name \
-    actor_rollout_ref.actor.optim.lr=3e-5 \
+    actor_rollout_ref.actor.optim.lr=1e-5 \
     actor_rollout_ref.actor.optim.weight_decay=0.0001 \
     actor_rollout_ref.actor.ppo_mini_batch_size=16 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=16 \
@@ -59,7 +59,7 @@ python3 -m verl_omni.trainer.diffusion.main_flowgrpo \
     reward.custom_reward_function.name=compute_score_ocr \
     trainer.logger='["console", "wandb"]' \
     trainer.project_name=flow_grpo \
-    trainer.experiment_name=qwen_ocr_full_sp_lr_3e-5_clip_1e-5 \
+    trainer.experiment_name=qwen_ocr_full_sp_lr_1e-5_clip_1e-5 \
     trainer.log_val_generations=8 \
     trainer.val_before_train=False \
     trainer.n_gpus_per_node=$NUM_GPUS_ACTOR_ROLLOUT_REWARD \
