@@ -1,9 +1,9 @@
 name: upstream-sync
 
 on:
-  schedule:
-    - cron: '0 2 * * 1'  # weekly Monday 2 AM UTC
-  workflow_dispatch:      # manual trigger for testing / backfill
+  push:
+    branches: [gitaction]
+  workflow_dispatch:  # manual on-demand trigger
 
 concurrency:
   group: upstream-sync
