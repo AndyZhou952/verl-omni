@@ -52,6 +52,7 @@ from verl.utils.fsdp_utils import (
     offload_fsdp_optimizer,
     replace_lora_wrapper,
 )
+from verl.utils.memory_utils import aggressive_empty_cache
 from verl.utils.model import convert_weight_keys
 from verl.utils.py_functional import append_to_dict, convert_to_regular_types
 from verl.workers.config import FSDPEngineConfig, FSDPOptimizerConfig
@@ -69,7 +70,7 @@ logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 device_name = get_device_name()
 
 
-@EngineRegistry.register(model_type="diffusion_model", backend=["fsdp", "fsdp2"], device=["cuda"])
+@EngineRegistry.register(model_type="diffusion_model", backend=["fsdp", "fsdp2"], device=["cuda", "npu"])
 class DiffusersFSDPEngine(BaseEngine):
     """
     Concrete Diffusers Engine implementation using PyTorch FullyShardedDataParallel (FSDP).
@@ -122,7 +123,11 @@ class DiffusersFSDPEngine(BaseEngine):
         return self._is_offload_optimizer
 
     def is_mp_src_rank_with_outputs(self):
-        return True
+        if self.ulysses_device_mesh is not None:
+            is_collect = self.ulysses_device_mesh["ulysses"].get_local_rank() == 0
+        else:
+            is_collect = True
+        return is_collect
 
     def initialize(self):
         """
@@ -154,13 +159,32 @@ class DiffusersFSDPEngine(BaseEngine):
 
     def _init_device_mesh(self):
         world_size = torch.distributed.get_world_size()
+        from torch.distributed.device_mesh import init_device_mesh
 
         fsdp_size = self.engine_config.fsdp_size
 
         self.device_mesh = create_device_mesh(world_size=world_size, fsdp_size=fsdp_size)
+        self.ulysses_device_mesh = None
         self.ulysses_sequence_parallel_size = self.engine_config.ulysses_sequence_parallel_size
+        dp_size = self.get_data_parallel_size()
         if self.ulysses_sequence_parallel_size > 1:
-            raise NotImplementedError("Ulysses sequence parallel for Diffusers backend is not supported currently.")
+            import diffusers
+            from packaging import version
+
+            if version.parse(diffusers.__version__) < version.parse("0.38.0"):
+                raise RuntimeError(
+                    f"Ulysses sequence parallelism requires diffusers >= 0.38.0 (found {diffusers.__version__}). "
+                )
+
+            # diffusers' ContextParallelConfig.setup() unconditionally accesses self._mesh["ring", "ulysses"],
+            # so the mesh must have both named dimensions even though ring attention is not used.
+            self.ulysses_device_mesh = init_device_mesh(
+                device_name,
+                mesh_shape=(dp_size, 1, self.ulysses_sequence_parallel_size),
+                mesh_dim_names=["dp", "ring", "ulysses"],
+            )
+
+        self.use_ulysses_sp = self.ulysses_sequence_parallel_size > 1
 
     def _build_module(self):
         from diffusers import AutoModel
@@ -185,6 +209,7 @@ class DiffusersFSDPEngine(BaseEngine):
                 trust_remote_code=self.model_config.trust_remote_code,
                 subfolder="transformer",  # currently we support DiT with transformer backbone only.
             )
+            module.set_attention_backend(self.model_config.attn_backend)
 
             # some parameters may not in torch_dtype
             module.to(torch_dtype)
@@ -367,6 +392,7 @@ class DiffusersFSDPEngine(BaseEngine):
         return lr_scheduler
 
     def _build_model_optimizer(self):
+        from diffusers import ContextParallelConfig
         from verl.utils.model import print_model_size
 
         # Load base model with specified configuration and dtype
@@ -374,6 +400,12 @@ class DiffusersFSDPEngine(BaseEngine):
         # Apply LoRA adapters if low-rank adaptation is enabled
         if self._is_lora:
             module = self._build_lora_module(module)
+
+        if self.use_ulysses_sp:
+            sp_size = self.ulysses_sequence_parallel_size
+            module.enable_parallelism(
+                config=ContextParallelConfig(ulysses_degree=sp_size, mesh=self.ulysses_device_mesh)
+            )
 
         # Load diffusion scheduler
         scheduler = self._build_scheduler()
@@ -420,13 +452,19 @@ class DiffusersFSDPEngine(BaseEngine):
         return EngineEvalModeCtx(self, **kwargs)
 
     def get_data_parallel_rank(self):
-        return torch.distributed.get_rank()
+        if self.ulysses_device_mesh is not None:
+            return self.ulysses_device_mesh["dp"].get_local_rank()
+        else:
+            return torch.distributed.get_rank()
 
     def get_data_parallel_size(self):
-        return torch.distributed.get_world_size()
+        return torch.distributed.get_world_size() // self.ulysses_sequence_parallel_size
 
     def get_data_parallel_group(self):
-        return torch.distributed.group.WORLD
+        if self.ulysses_device_mesh is not None:
+            return self.ulysses_device_mesh.get_group(mesh_dim="dp")
+        else:
+            return torch.distributed.group.WORLD
 
     def get_model_parallel_group(self):
         raise NotImplementedError
@@ -438,6 +476,7 @@ class DiffusersFSDPEngine(BaseEngine):
         self, data: TensorDict, loss_function: Callable, forward_only: bool = False
     ) -> list[TensorDict]:
         num_timesteps = data["all_timesteps"].shape[1]
+        tu.assign_non_tensor(data, sp_size=self.ulysses_sequence_parallel_size)
         tu.assign_non_tensor(data, use_dynamic_bsz=False)
 
         micro_batches, indices = prepare_micro_batches(
@@ -517,6 +556,17 @@ class DiffusersFSDPEngine(BaseEngine):
         mask = torch.nested.to_padded_tensor(mask, padding=0, output_size=(batch_size, max_seq_len))
         return embeds, mask
 
+    @staticmethod
+    def _pad_embeds_for_sp(embeds: torch.Tensor, mask: torch.Tensor, sp_size: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """Pad sequence dimension of (embeds, mask) to a multiple of sp_size."""
+        seq_len = embeds.size(1)
+        aligned_seq_len = (seq_len + sp_size - 1) // sp_size * sp_size
+        if aligned_seq_len > seq_len:
+            pad_len = aligned_seq_len - seq_len
+            embeds = torch.nn.functional.pad(embeds, (0, 0, 0, pad_len))
+            mask = torch.nn.functional.pad(mask, (0, pad_len))
+        return embeds, mask
+
     def prepare_model_inputs(self, micro_batch: TensorDict, step: int):
         """
         Extract and pre-process universal tensors, then delegate architecture-specific
@@ -531,13 +581,22 @@ class DiffusersFSDPEngine(BaseEngine):
         prompt_embeds_mask = micro_batch["prompt_embeds_mask"]
         negative_prompt_embeds = micro_batch["negative_prompt_embeds"]
         negative_prompt_embeds_mask = micro_batch["negative_prompt_embeds_mask"]
+        sp_size = self.ulysses_sequence_parallel_size if self.use_ulysses_sp else 1
 
         if prompt_embeds.is_nested:
             prompt_embeds, prompt_embeds_mask = self._unpad_nested_embeds(prompt_embeds, prompt_embeds_mask)
 
+        if sp_size > 1:
+            prompt_embeds, prompt_embeds_mask = self._pad_embeds_for_sp(prompt_embeds, prompt_embeds_mask, sp_size)
+
         if isinstance(negative_prompt_embeds, torch.Tensor) and negative_prompt_embeds.is_nested:
             negative_prompt_embeds, negative_prompt_embeds_mask = self._unpad_nested_embeds(
                 negative_prompt_embeds, negative_prompt_embeds_mask
+            )
+
+        if isinstance(negative_prompt_embeds, torch.Tensor) and sp_size > 1:
+            negative_prompt_embeds, negative_prompt_embeds_mask = self._pad_embeds_for_sp(
+                negative_prompt_embeds, negative_prompt_embeds_mask, sp_size
             )
 
         return prepare_model_inputs(
@@ -554,11 +613,12 @@ class DiffusersFSDPEngine(BaseEngine):
         )
 
     def prepare_model_outputs(self, output, micro_batch: TensorDict):
-        log_prob, prev_sample_mean, std_dev_t = output
+        log_prob, prev_sample_mean, std_dev_t, sqrt_dt = output
         return {
             "log_probs": log_prob,
             "prev_sample_mean": prev_sample_mean,
             "std_dev_t": std_dev_t,
+            "sqrt_dt": sqrt_dt,
         }
 
     def forward_step(self, micro_batch: TensorDict, loss_function, forward_only, step):
@@ -586,6 +646,7 @@ class DiffusersFSDPEngine(BaseEngine):
                 gradient_accumulation_steps=tu.get_non_tensor_data(
                     micro_batch, "gradient_accumulation_steps", default=None
                 ),
+                sp_size=tu.get_non_tensor_data(micro_batch, "sp_size", default=None),
             )
 
             if micro_batch.get("ref_log_prob", None) is not None:
@@ -593,6 +654,9 @@ class DiffusersFSDPEngine(BaseEngine):
 
             if micro_batch.get("ref_prev_sample_mean", None) is not None:
                 data["ref_prev_sample_mean"] = micro_batch["ref_prev_sample_mean"][:, step]
+
+            if micro_batch.get("old_prev_sample_mean", None) is not None:
+                data["old_prev_sample_mean"] = micro_batch["old_prev_sample_mean"][:, step]
 
             loss, metrics = loss_function(model_output=model_output, data=data, dp_group=self.get_data_parallel_group())
         else:
@@ -701,6 +765,8 @@ class DiffusersFSDPEngine(BaseEngine):
         torch.distributed.barrier()
         if self._is_offload_param:
             offload_fsdp_model_to_cpu(self.module)
+        gc.collect()
+        aggressive_empty_cache(force_sync=True)
 
     def load_checkpoint(
         self, local_path: str, hdfs_path: Optional[str] = None, del_local_after_load: int = True, **kwargs

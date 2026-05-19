@@ -59,7 +59,6 @@ The script runs `python3 -m verl_omni.trainer.diffusion.main_flowgrpo` with:
 - `actor_rollout_ref.model.lora_rank=64`
 - `actor_rollout_ref.model.lora_alpha=128`
 - `actor_rollout_ref.rollout.name=vllm_omni`
-- `reward.reward_manager.name=visual`
 - `reward.custom_reward_function.name=compute_score_ocr`
 - `trainer.n_gpus_per_node=4`
 
@@ -93,6 +92,18 @@ For reward models that are expensive to evaluate (e.g., a VLM judge), the reward
 bash examples/flowgrpo_trainer/run_qwen_image_ocr_lora_async_reward.sh
 ```
 
+Ulysses sequence parallelism shards the sequence dimension across GPUs to reduce per-GPU memory. A ready-to-use 4-GPU SP=2 LoRA example is provided:
+
+```bash
+bash examples/flowgrpo_trainer/run_qwen_image_ocr_lora_sp2.sh
+```
+
+We have provided a script to enable non-cfg full-weight Qwen-Image OCR training. The example is runnable on 4 NVIDIA H200 GPUs; enabling CFG requires more GPU resources.
+
+```bash
+bash examples/flowgrpo_trainer/run_qwen_image_ocr.sh
+```
+
 
 ## Performance
 
@@ -114,3 +125,5 @@ qwen_image_ocr_lora: corresponding with the script `run_qwen_image_ocr_lora.sh`;
 <br>
 qwen_image_ocr_lora_async_reward: corresponding with the script `run_qwen_image_ocr_lora_async_reward.sh`.
 </div>
+
+> **Note:** Reward curves may differ from the references above mainly due to rollout-side stochasticity: diffusion rollouts sample random latents/noise, and the example scripts do not fix the data seed, so prompt ordering can vary between runs.

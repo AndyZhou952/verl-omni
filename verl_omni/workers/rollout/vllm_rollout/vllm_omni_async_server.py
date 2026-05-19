@@ -98,7 +98,10 @@ class vLLMOmniHttpServer(vLLMHttpServer):
         engine_args = asdict(engine_args)
 
         import_external_libs(self.config.external_lib)
-        pipeline_path = VllmOmniPipelineBase.get_pipeline_path(self.model_config.architecture)
+        pipeline_path = VllmOmniPipelineBase.get_pipeline_path(
+            architecture=self.model_config.architecture,
+            algorithm=self.model_config.algorithm,
+        )
         # TODO (mike): read custom_pipeline from engine_args
         if pipeline_path is not None:
             engine_args["enable_dummy_pipeline"] = True
@@ -122,6 +125,20 @@ class vLLMOmniHttpServer(vLLMHttpServer):
 
     def _get_wake_up_tags(self) -> list[str]:
         return ["weights"]
+
+    async def _sleep_hybrid(self):
+        """Preserve non-actor pipeline weights during hybrid training sleep.
+
+        vLLM-Omni diffusion pipelines include components such as the text
+        encoder and VAE that are loaded by the rollout server, but are not part
+        of the trainable actor and therefore are not included in full-model
+        weight syncs. Use level-1 sleep so those weights are offloaded and can
+        be restored on wake-up instead of discarded by level-2 sleep.
+        """
+        # TODO (andy): use `sleep_level=2` in the future when the
+        #  trainer side incorporates the whole components of the model.
+        await self.engine.collective_rpc("sleep", kwargs={"level": 1})
+        await self.engine.reset_encoder_cache()
 
     async def generate(
         self,
