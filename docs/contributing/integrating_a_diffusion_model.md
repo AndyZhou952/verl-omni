@@ -303,8 +303,8 @@ RL exploration starts from a known-good operating point.
 | `pipeline.height`, `pipeline.width` | Must be a multiple of `vae_scale_factor * 2`. |
 | `pipeline.num_inference_steps` | Steps used **during training rollout**. Default `10` — do not override unless you know why. |
 | `actor_rollout_ref.rollout.val_kwargs.pipeline.num_inference_steps` | Full-quality steps for **validation only** (e.g. `50`). |
-| `pipeline.true_cfg_scale` | For Qwen-Image-style true CFG (e.g. `4.0`). Default `1.0` (disabled). |
-| `pipeline.guidance_scale` | For pipelines whose upstream uses `guidance_scale`. Default `null` defers to the pipeline. |
+| `pipeline.true_cfg_scale` | For pipelines that expose traditional CFG separately from `guidance_scale`, such as Qwen-Image (e.g. `4.0`). Default `1.0` (disabled). |
+| `pipeline.guidance_scale` | Adapter-specific upstream `guidance_scale`. For Qwen-Image this is only for guidance-distilled checkpoints and is ignored by the standard checkpoint; use `true_cfg_scale` for Qwen CFG. For Z-Image this maps to the upstream CFG scale, but Turbo checkpoints are distilled and should normally use the model-card default `0.0`. Default `null` defers to the pipeline. |
 | `pipeline.max_sequence_length` | Must accommodate the templated prompt length your tokenizer produces. |
 
 > **Config hygiene.** Any new field on

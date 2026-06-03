@@ -96,10 +96,15 @@ the rollout section is the main place to override sampling behavior.
   denoising steps used during validation / evaluation.
 
 - `actor_rollout_ref.rollout.pipeline.true_cfg_scale`: True classifier-free guidance
-  scale used during rollout. Used in `Qwen-Image`.
+  scale used during rollout for pipelines that expose CFG separately from
+  `guidance_scale`, such as `Qwen-Image`.
 
-- `actor_rollout_ref.rollout.pipeline.guidance_scale`: Distilled guidance scale for
-  models that expose a guidance embedding; keep `null` to disable it.
+- `actor_rollout_ref.rollout.pipeline.guidance_scale`: Adapter-specific upstream
+  guidance scale. For standard `Qwen-Image`, Diffusers reserves this for
+  guidance-distilled checkpoints and traditional CFG should use
+  `true_cfg_scale` instead. For `Z-Image`, Diffusers uses `guidance_scale` for
+  CFG directly, but `Z-Image-Turbo` is a distilled few-step checkpoint whose
+  model card recommends `guidance_scale=0.0`.
 
 #### Model
 
