@@ -91,6 +91,18 @@ class TestVllmOmniPipelineBaseRegistry:
         assert VllmOmniPipelineBase.get_class("QwenImagePipeline", "flow_grpo") is QwenImagePipelineWithLogProb
         assert VllmOmniPipelineBase.get_class("QwenImagePipeline", "diffusion_nft") is QwenImageDiffusionNFTPipeline
 
+    def test_builtin_z_image_flow_grpo_registered(self):
+        from verl_omni.pipelines.z_image_flow_grpo.diffusers_training_adapter import ZImage
+        from verl_omni.pipelines.z_image_flow_grpo.vllm_omni_rollout_adapter import ZImagePipelineWithLogProb
+
+        cfg = _make_model_config("ZImagePipeline", algorithm="flow_grpo")
+        assert DiffusionModelBase.get_class(cfg) is ZImage
+        assert VllmOmniPipelineBase.get_class("ZImagePipeline", "flow_grpo") is ZImagePipelineWithLogProb
+        assert (
+            VllmOmniPipelineBase.get_pipeline_path("ZImagePipeline", "flow_grpo")
+            == "verl_omni.pipelines.z_image_flow_grpo.vllm_omni_rollout_adapter.ZImagePipelineWithLogProb"
+        )
+
     def test_diffusion_nft_rollout_does_not_override_sde_trajectory_loop(self):
         from verl_omni.pipelines.qwen_image_diffusion_nft.vllm_omni_rollout_adapter import (
             QwenImageDiffusionNFTPipeline,

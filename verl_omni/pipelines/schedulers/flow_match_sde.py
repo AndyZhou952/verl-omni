@@ -206,11 +206,15 @@ class FlowMatchSDEDiscreteScheduler(FlowMatchEulerDiscreteScheduler):
 
         if sde_type == "sde":
             std_dev_t = torch.sqrt(sigma / (1 - torch.where(sigma == 1, sigma_max, sigma))) * noise_level
+            deterministic_prev_sample_mean = sample + model_output * dt
 
-            prev_sample_mean = (
-                sample * (1 + std_dev_t**2 / (2 * sigma) * dt)
-                + model_output * (1 + std_dev_t**2 * (1 - sigma) / (2 * sigma)) * dt
+            safe_sigma = torch.where(sigma == 0, torch.ones_like(sigma), sigma)
+            sde_prev_sample_mean = (
+                sample * (1 + std_dev_t**2 / (2 * safe_sigma) * dt)
+                + model_output * (1 + std_dev_t**2 * (1 - sigma) / (2 * safe_sigma)) * dt
             )
+            deterministic_step = (std_dev_t == 0) | (sigma == 0)
+            prev_sample_mean = torch.where(deterministic_step, deterministic_prev_sample_mean, sde_prev_sample_mean)
 
             if prev_sample is None:
                 variance_noise = randn_tensor(
@@ -222,11 +226,14 @@ class FlowMatchSDEDiscreteScheduler(FlowMatchEulerDiscreteScheduler):
                 prev_sample = prev_sample_mean + std_dev_t * torch.sqrt(-1 * dt) * variance_noise
 
             if return_logprobs:
+                std = std_dev_t * torch.sqrt(-1 * dt)
+                safe_std = torch.where(std == 0, torch.ones_like(std), std)
                 log_prob = (
-                    -((prev_sample.detach() - prev_sample_mean) ** 2) / (2 * ((std_dev_t * torch.sqrt(-1 * dt)) ** 2))
-                    - torch.log(std_dev_t * torch.sqrt(-1 * dt))
+                    -((prev_sample.detach() - prev_sample_mean) ** 2) / (2 * (safe_std**2))
+                    - torch.log(safe_std)
                     - torch.log(torch.sqrt(2 * torch.as_tensor(math.pi)))
                 )
+                log_prob = torch.where(std == 0, torch.zeros_like(log_prob), log_prob)
             else:
                 log_prob = None
 
