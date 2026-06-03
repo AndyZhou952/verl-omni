@@ -59,7 +59,19 @@ def configure_z_image_scheduler(
         scheduler.set_timesteps(num_inference_steps, device=device, mu=mu)
     else:
         scheduler.set_timesteps(sigmas=sigmas, device=device, mu=mu)
-    return scheduler.timesteps
+    return get_z_image_flow_grpo_timesteps(scheduler)
+
+
+def get_z_image_flow_grpo_timesteps(scheduler) -> torch.Tensor:
+    """Return Z-Image denoising timesteps that are valid for FlowGRPO SDE steps."""
+    timesteps = scheduler.timesteps
+    if timesteps.numel() == 0:
+        return timesteps
+
+    current_sigmas = scheduler.sigmas[: timesteps.numel()].to(device=timesteps.device)
+    if current_sigmas[-1] == 0:
+        return timesteps[:-1]
+    return timesteps
 
 
 def padded_embeds_to_list(prompt_embeds: torch.Tensor, prompt_embeds_mask: torch.Tensor | None) -> list[torch.Tensor]:
