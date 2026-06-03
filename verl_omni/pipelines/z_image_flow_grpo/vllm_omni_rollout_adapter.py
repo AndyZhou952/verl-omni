@@ -169,9 +169,9 @@ class ZImagePipelineWithLogProb(ZImageTokenIdPromptMixin, ZImagePipeline):
         prompt_mask: torch.Tensor | None = None,
         negative_prompt_ids: torch.Tensor | list[int] | None = None,
         negative_prompt_mask: torch.Tensor | None = None,
-        height: int | None = 1024,
-        width: int | None = 1024,
-        num_inference_steps: int = 8,
+        height: int | None = 512,
+        width: int | None = 512,
+        num_inference_steps: int = 50,
         sigmas: list[float] | None = None,
         guidance_scale: float = 0.0,
         cfg_normalization: float | bool = False,
@@ -193,8 +193,6 @@ class ZImagePipelineWithLogProb(ZImageTokenIdPromptMixin, ZImagePipeline):
         sde_type: Literal["sde", "cps"] = "sde",
         logprobs: bool = True,
     ) -> DiffusionOutput:
-        del callback_on_step_end_tensor_inputs
-
         custom_prompt = req.prompts[0] if req.prompts else {}
         if isinstance(custom_prompt, dict):
             prompt_ids = custom_prompt.get("prompt_ids", prompt_ids)
