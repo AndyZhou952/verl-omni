@@ -28,7 +28,6 @@ from verl_omni.workers.config import DiffusionModelConfig
 from .common import (
     apply_z_image_cfg,
     configure_z_image_scheduler,
-    get_z_image_guidance_scale,
     padded_embeds_to_list,
     prepare_latent_model_input,
     stack_z_image_model_output,
@@ -89,7 +88,7 @@ class ZImage(DiffusionModelBase):
             "return_dict": False,
         }
 
-        guidance_scale = get_z_image_guidance_scale(model_config)
+        guidance_scale = float(model_config.pipeline.guidance_scale)
         has_negative_prompt = isinstance(negative_prompt_embeds, torch.Tensor) and isinstance(
             negative_prompt_embeds_mask, torch.Tensor
         )
@@ -122,7 +121,7 @@ class ZImage(DiffusionModelBase):
         noise_pred = stack_z_image_model_output(module(**model_inputs))
         if negative_model_inputs is not None:
             neg_noise_pred = stack_z_image_model_output(module(**negative_model_inputs))
-            noise_pred = apply_z_image_cfg(noise_pred, neg_noise_pred, get_z_image_guidance_scale(model_config))
+            noise_pred = apply_z_image_cfg(noise_pred, neg_noise_pred, float(model_config.pipeline.guidance_scale))
         noise_pred = -noise_pred
 
         _, log_prob, prev_sample_mean, std_dev_t, sqrt_dt = scheduler.sample_previous_step(

@@ -34,17 +34,6 @@ def coalesce_not_none(value, default):
     return default if value is None else value
 
 
-def get_z_image_guidance_scale(model_config) -> float:
-    guidance_scale = getattr(model_config.pipeline, "guidance_scale", None)
-    return 0.0 if guidance_scale is None else float(guidance_scale)
-
-
-def get_z_image_image_seq_len(height: int, width: int, vae_scale_factor: int = Z_IMAGE_VAE_SCALE_FACTOR) -> int:
-    latent_height = 2 * (int(height) // (vae_scale_factor * 2))
-    latent_width = 2 * (int(width) // (vae_scale_factor * 2))
-    return (latent_height // 2) * (latent_width // 2)
-
-
 def configure_z_image_scheduler(
     scheduler,
     *,
@@ -55,7 +44,9 @@ def configure_z_image_scheduler(
     sigmas: Optional[list[float]] = None,
     vae_scale_factor: int = Z_IMAGE_VAE_SCALE_FACTOR,
 ) -> torch.Tensor:
-    image_seq_len = get_z_image_image_seq_len(height, width, vae_scale_factor)
+    latent_height = 2 * (int(height) // (vae_scale_factor * 2))
+    latent_width = 2 * (int(width) // (vae_scale_factor * 2))
+    image_seq_len = (latent_height // 2) * (latent_width // 2)
     mu = calculate_shift(
         image_seq_len,
         scheduler.config.get("base_image_seq_len", 256),
