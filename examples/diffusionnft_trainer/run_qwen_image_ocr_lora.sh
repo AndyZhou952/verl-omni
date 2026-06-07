@@ -38,7 +38,7 @@ python3 -m verl_omni.trainer.main_diffusion \
     actor_rollout_ref.actor.ppo_mini_batch_size=12 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=12 \
     actor_rollout_ref.actor.diffusion_loss.loss_mode=diffusion_nft \
-    actor_rollout_ref.actor.diffusion_loss.clip_ratio=1e-5 \
+    actor_rollout_ref.actor.diffusion_loss.clip_ratio=1e-4 \
     actor_rollout_ref.actor.diffusion_loss.mix_beta=0.1 \
     actor_rollout_ref.actor.diffusion_loss.ref_kl_coef=0.0001 \
     actor_rollout_ref.actor.diffusion_loss.adv_clip_max=5.0 \
