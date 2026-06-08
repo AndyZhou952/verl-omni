@@ -63,6 +63,8 @@ async def compute_score(
     solution_image: torch.Tensor,
     ground_truth: str,
     server_url: str,
+    extra_info: dict | None = None,
+    metadata: dict | None = None,
     **kwargs,
 ) -> dict:
     """Compute reward by calling an external HTTP scorer service.
@@ -71,18 +73,29 @@ async def compute_score(
         solution_image: Generated image tensor (C, H, W) or (N, C, H, W).
         ground_truth: Prompt string passed directly to the scorer service.
         server_url: Full URL of the scorer service (e.g., "http://localhost:19082").
+        extra_info: Per-sample metadata from the dataset. GenEval-style services
+            can read include/exclude/tag fields from the forwarded metadata.
+        metadata: Explicit metadata override. If omitted, metadata is derived
+            from extra_info while dropping reward-loop bookkeeping fields.
 
     Returns:
         dict with "score" key.
     """
     loop = asyncio.get_event_loop()
     image_bytes = await loop.run_in_executor(None, _prepare_image_bytes, solution_image)
+    if metadata is None:
+        extra_info = extra_info or {}
+        metadata = {
+            key: value
+            for key, value in extra_info.items()
+            if key not in {"num_turns", "rollout_reward_scores"}
+        }
 
     payload = pickle.dumps(
         {
             "images": [image_bytes],
             "prompts": [ground_truth],
-            "metadata": {},
+            "metadata": metadata,
         }
     )
 
