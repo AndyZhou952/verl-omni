@@ -11,7 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Preprocess OCR data for Z-Image FlowGRPO training."""
+"""
+Preprocess the OCR dataset to parquet format (for Z-Image-Turbo training).
+You can obtain the raw dataset from https://github.com/yifan123/flow_grpo/tree/main/dataset/ocr
+"""
 
 import argparse
 import os

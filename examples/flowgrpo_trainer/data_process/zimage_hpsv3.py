@@ -11,7 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Preprocess DanceGRPO prompts for Z-Image HPSv3 FlowGRPO training."""
+"""
+Preprocess DanceGRPO prompts to parquet format (for Z-Image-Turbo HPSv3 training).
+You can obtain the raw prompts from https://github.com/xingjianbai/DanceGRPO (video_prompts.txt).
+"""
 
 import argparse
 import os

@@ -11,14 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Preprocess GenEval prompts for Z-Image FlowGRPO HTTP-reward training."""
+"""
+Preprocess the GenEval dataset to parquet format (for Z-Image-Turbo HTTP-reward training).
+You can obtain the raw dataset from https://github.com/yifan123/flow_grpo/tree/main/dataset/geneval
+"""
 
 import argparse
 import json
 import os
 from pathlib import Path
 
-import pandas as pd
+import datasets
 from verl.utils.hdfs_io import copy, makedirs
 
 
@@ -34,11 +37,17 @@ def _read_jsonl(path: str) -> list[dict]:
 
 def _default_split_paths(input_dir: str) -> tuple[str, str]:
     base = Path(os.path.expanduser(input_dir))
-    train_path = base / "train.jsonl"
-    test_path = base / "test.jsonl"
-    if not train_path.exists() or not test_path.exists():
-        raise FileNotFoundError(f"Expected train.jsonl and test.jsonl under {base}")
-    return str(train_path), str(test_path)
+    candidates = [
+        (base / "train_metadata.jsonl", base / "test_metadata.jsonl"),
+        (base / "train.jsonl", base / "test.jsonl"),
+    ]
+    for train_path, test_path in candidates:
+        if train_path.exists() and test_path.exists():
+            return str(train_path), str(test_path)
+    raise FileNotFoundError(
+        f"Expected train/test metadata jsonl under {base}. "
+        "Download from https://github.com/yifan123/flow_grpo/tree/main/dataset/geneval"
+    )
 
 
 def _make_records(items: list[dict], split: str) -> list[dict]:
@@ -47,9 +56,10 @@ def _make_records(items: list[dict], split: str) -> list[dict]:
         prompt = item.get("prompt") or item.get("text")
         if not prompt:
             continue
+        # Nested GenEval constraints are JSON-encoded so parquet can store them safely.
         metadata = {
-            "include": item.get("include", []),
-            "exclude": item.get("exclude", None),
+            "include": json.dumps(item.get("include", [])),
+            "exclude": json.dumps(item.get("exclude")) if item.get("exclude") is not None else None,
             "tag": item.get("tag", None),
         }
         records.append(
@@ -99,8 +109,8 @@ if __name__ == "__main__":
 
     train_output = os.path.join(output_dir, "train.parquet")
     test_output = os.path.join(output_dir, "test.parquet")
-    pd.DataFrame(train_records).to_parquet(train_output)
-    pd.DataFrame(test_records).to_parquet(test_output)
+    datasets.Dataset.from_list(train_records).to_parquet(train_output)
+    datasets.Dataset.from_list(test_records).to_parquet(test_output)
 
     print(f"Train: {len(train_records)} records -> {train_output}")
     print(f"Test:  {len(test_records)} records -> {test_output}")

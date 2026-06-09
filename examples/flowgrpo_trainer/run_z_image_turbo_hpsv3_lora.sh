@@ -3,42 +3,19 @@ set -x
 
 # Set WORKSPACE to any writable directory; defaults to $HOME
 WORKSPACE=${WORKSPACE:-$HOME}
-export HF_HOME=${HF_HOME:-/mnt/models/hub}
-export RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES=${RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES:-1}
 
 hpsv3_train_path=$WORKSPACE/data/hpsv3/z_image/train.parquet
 hpsv3_test_path=$WORKSPACE/data/hpsv3/z_image/test.parquet
 
 model_name=Tongyi-MAI/Z-Image-Turbo
-reward_model_name=${HPSV3_REWARD_MODEL_PATH:-/mnt/models/hub/HPSv3/HPSv3.safetensors}
+hpsv3_reward_model_path=$HOME/huggingface/HPSv3/HPSv3.safetensors
 reward_function_path=verl_omni/utils/reward_score/hpsv3_reward.py
-export custom_reward_model_path=$reward_model_name
 
-NUM_GPUS_ACTOR_ROLLOUT_REWARD=${NUM_GPUS_ACTOR_ROLLOUT_REWARD:-4}
-ROLLOUT_TP=${ROLLOUT_TP:-1}
-REWARD_DEVICE=${REWARD_DEVICE:-cuda}
+NUM_GPUS_ACTOR_ROLLOUT_REWARD=4
+ROLLOUT_TP=1
+IMAGE_RESOLUTION=1024
 
 ENGINE=vllm_omni
-
-script_path=$(readlink -f "$0")
-script_name=$(basename "$script_path" .sh)
-repo_root=$(dirname "$script_path")
-while [[ "$repo_root" != "/" && ! -f "$repo_root/LICENSE" ]]; do
-    repo_root=$(dirname "$repo_root")
-done
-if [[ ! -f "$repo_root/LICENSE" ]]; then
-    echo "Unable to locate repo root from $script_path: no LICENSE found" >&2
-    exit 1
-fi
-
-output_dir=$repo_root/outputs/$script_name
-checkpoint_dir=$output_dir/checkpoints
-run_timestamp=$(date +"%Y%m%d_%H%M")
-log_file=$output_dir/logs/$run_timestamp/${NODE_RANK:-0}.log
-rollout_data_dir=$output_dir/logs/$run_timestamp/rollout_images
-mkdir -p "$checkpoint_dir" "$(dirname "$log_file")"
-exec > >(tee -a "$log_file") 2>&1
-echo "Logging to $log_file"
 
 python3 -m verl_omni.trainer.main_diffusion \
     algorithm.adv_estimator=flow_grpo \
@@ -58,7 +35,6 @@ python3 -m verl_omni.trainer.main_diffusion \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=4 \
     actor_rollout_ref.actor.diffusion_loss.loss_mode=flow_grpo \
     actor_rollout_ref.actor.diffusion_loss.clip_ratio=1e-4 \
-    actor_rollout_ref.actor.diffusion_loss.adv_clip_max=5.0 \
     actor_rollout_ref.actor.fsdp_config.param_offload=True \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=True \
     actor_rollout_ref.actor.fsdp_config.model_dtype=bfloat16 \
@@ -69,8 +45,8 @@ python3 -m verl_omni.trainer.main_diffusion \
     actor_rollout_ref.rollout.agent.num_workers=$((NUM_GPUS_ACTOR_ROLLOUT_REWARD / ROLLOUT_TP)) \
     actor_rollout_ref.rollout.load_format=safetensors \
     actor_rollout_ref.rollout.layered_summon=True \
-    actor_rollout_ref.rollout.pipeline.height=1024 \
-    actor_rollout_ref.rollout.pipeline.width=1024 \
+    actor_rollout_ref.rollout.pipeline.height=$IMAGE_RESOLUTION \
+    actor_rollout_ref.rollout.pipeline.width=$IMAGE_RESOLUTION \
     actor_rollout_ref.rollout.pipeline.num_inference_steps=9 \
     actor_rollout_ref.rollout.pipeline.guidance_scale=0.0 \
     actor_rollout_ref.rollout.pipeline.max_sequence_length=256 \
@@ -84,21 +60,19 @@ python3 -m verl_omni.trainer.main_diffusion \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=1 \
     reward.num_workers=1 \
     reward.reward_model.enable=False \
-    reward.reward_model.model_path=$reward_model_name \
     reward.custom_reward_function.path=pkg://verl_omni.reward_loop.reward_manager.multi \
     reward.custom_reward_function.name=_multi_reward_placeholder \
     reward.reward_manager.name=MultiVisualRewardManager \
     reward.reward_manager.module.path=pkg://verl_omni.reward_loop.reward_manager \
-    "+reward.reward_functions.hpsv3.path=$repo_root/$reward_function_path" \
+    "+reward.reward_functions.hpsv3.path=$reward_function_path" \
     '+reward.reward_functions.hpsv3.name=compute_score_hpsv3' \
     '+reward.reward_functions.hpsv3.weight=1.0' \
-    "+reward.reward_functions.hpsv3.device=$REWARD_DEVICE" \
+    "+reward.reward_functions.hpsv3.model_name=$hpsv3_reward_model_path" \
+    '+reward.reward_functions.hpsv3.device=cuda' \
     reward.aggregation=weighted_sum \
     trainer.logger='["console", "wandb"]' \
     trainer.project_name=flow_grpo \
     trainer.experiment_name=z_image_turbo_hpsv3_lora \
-    trainer.default_local_dir=$checkpoint_dir \
-    +trainer.rollout_data_dir=$rollout_data_dir \
     trainer.log_val_generations=8 \
     trainer.val_before_train=False \
     trainer.n_gpus_per_node=$NUM_GPUS_ACTOR_ROLLOUT_REWARD \

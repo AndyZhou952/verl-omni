@@ -25,6 +25,30 @@ logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
 
+def _debug_lora_sync_enabled() -> bool:
+    return os.getenv("VERL_OMNI_DEBUG_LORA_SYNC", "0").lower() in {"1", "true", "yes", "on"}
+
+
+def _summarize_lora_tensors(weights: dict[str, torch.Tensor]) -> str:
+    total_numel = 0
+    total_abs = 0.0
+    max_abs = 0.0
+    first_keys = []
+    for name, tensor in weights.items():
+        if len(first_keys) < 3:
+            first_keys.append(name)
+        tensor_float = tensor.detach().float()
+        total_numel += tensor_float.numel()
+        total_abs += tensor_float.abs().sum().item()
+        if tensor_float.numel() > 0:
+            max_abs = max(max_abs, tensor_float.abs().max().item())
+    mean_abs = total_abs / total_numel if total_numel else 0.0
+    return (
+        f"loaded_params={len(weights)} total_numel={total_numel} "
+        f"mean_abs={mean_abs:.8e} max_abs={max_abs:.8e} first_keys={first_keys}"
+    )
+
+
 class vLLMOmniColocateWorkerExtension(NPUColocateWorkerMixin, CustomPipelineWorkerExtension):
     """
     The class for vLLM-Omni's worker to inherit from, in the colocate setting.
@@ -71,6 +95,8 @@ class vLLMOmniColocateWorkerExtension(NPUColocateWorkerMixin, CustomPipelineWork
     def _update_weights(self, weights: list[tuple[str, torch.Tensor]], peft_config: dict, base_sync_done: bool):
         if peft_config and base_sync_done:
             weights = dict(weights)
+            if _debug_lora_sync_enabled():
+                print(f"[verl-omni-debug] rollout_lora_update {_summarize_lora_tensors(weights)}", flush=True)
             lora_request = OmniTensorLoRARequest(
                 lora_name=VLLM_LORA_NAME,
                 lora_int_id=VLLM_LORA_INT_ID,
@@ -81,6 +107,12 @@ class vLLMOmniColocateWorkerExtension(NPUColocateWorkerMixin, CustomPipelineWork
             self.add_lora(lora_request)
             logger.info(f"vLLM-Omni load weights, loaded_params: {len(weights)}")
         else:
+            if _debug_lora_sync_enabled():
+                print(
+                    f"[verl-omni-debug] rollout_standard_update peft_config={peft_config is not None} "
+                    f"base_sync_done={base_sync_done}",
+                    flush=True,
+                )
             logger.info("Loading standard weights (async)")
             self.load_weights(weights)
 

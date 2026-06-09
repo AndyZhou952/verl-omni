@@ -215,13 +215,24 @@ class vLLMOmniHttpServer(vLLMHttpServer):
 
         # Add lora request
         lora_request = None
+        loaded_loras = None
         if self.lora_as_adapter:
             # Make sure we also check that the lora is already loaded in the engine
-            lora_loaded = VLLM_LORA_INT_ID in await self.engine.list_loras()
+            loaded_loras = await self.engine.list_loras()
+            lora_loaded = VLLM_LORA_INT_ID in loaded_loras
             if lora_loaded:
                 lora_request = LoRARequest(
                     lora_name=VLLM_LORA_NAME, lora_int_id=VLLM_LORA_INT_ID, lora_path=VLLM_LORA_PATH
                 )
+        if os.getenv("VERL_OMNI_DEBUG_LORA_SYNC", "0").lower() in {"1", "true", "yes", "on"}:
+            print(
+                "[verl-omni-debug] generate_lora_state "
+                f"request_id={request_id} seed={sampling_params.get('seed')} "
+                f"validate={sampling_params.get('global_steps') is None and sampling_params.get('logprobs') is False} "
+                f"lora_as_adapter={self.lora_as_adapter} loaded_loras={loaded_loras} "
+                f"attach_lora={lora_request is not None}",
+                flush=True,
+            )
 
         # Build OmniCustomPrompt with pre-tokenized IDs
         custom_prompt: OmniCustomPrompt = {"prompt_ids": prompt_ids}

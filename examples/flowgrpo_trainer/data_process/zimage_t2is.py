@@ -11,7 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Preprocess T2IS/PickScore prompts for Z-Image FlowGRPO training."""
+"""
+Preprocess T2IS/PickScore prompts to parquet format (for Z-Image-Turbo training).
+Place train/test jsonl or txt files under the input directory (see --input_dir).
+"""
 
 import argparse
 import json
@@ -77,6 +80,11 @@ if __name__ == "__main__":
     parser.add_argument("--max_train_samples", type=int, default=None)
     parser.add_argument("--max_test_samples", type=int, default=None)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--data_source",
+        default="flow_grpo/pickscore",
+        help="Value stored in the data_source column (flow_grpo/pickscore for PickScore prompts).",
+    )
     args = parser.parse_args()
 
     if args.train_path is None:
@@ -104,8 +112,8 @@ if __name__ == "__main__":
     output_dir = os.path.expanduser(args.output_dir)
     os.makedirs(output_dir, exist_ok=True)
 
-    train_records = _make_records(train_prompts, "train", "flow_factory/t2is")
-    test_records = _make_records(test_prompts, "test", "flow_factory/t2is")
+    train_records = _make_records(train_prompts, "train", args.data_source)
+    test_records = _make_records(test_prompts, "test", args.data_source)
 
     train_output = os.path.join(output_dir, "train.parquet")
     test_output = os.path.join(output_dir, "test.parquet")

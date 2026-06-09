@@ -159,7 +159,13 @@ def _collect_lora_params_with_adapter(
                 )
             if layered_summon_fn is _upstream_layered_summon_lora_params:
                 return layered_summon_fn(module)
-            return layered_summon_fn(module, adapter_name=adapter_name)
+            params = layered_summon_fn(module, adapter_name=adapter_name)
+            if params:
+                return params
+            # Some diffusers backbones do not expose LoRA-bearing modules under
+            # the common transformer_blocks prefixes. Falling back prevents
+            # silently syncing an empty LoRA adapter to rollout.
+            return _collect_lora_params_non_layered(module, peft_model, adapter_name, base_sync_done)
         return _collect_lora_params_non_layered(module, peft_model, adapter_name, base_sync_done)
 
     if base_sync_done:

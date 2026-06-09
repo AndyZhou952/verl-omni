@@ -11,9 +11,9 @@ model_name=Tongyi-MAI/Z-Image-Turbo
 reward_model_name=Qwen/Qwen3-VL-8B-Instruct
 reward_function_path=verl_omni/utils/reward_score/genrm_ocr.py
 
-NUM_GPUS_ACTOR_ROLLOUT_REWARD=${NUM_GPUS_ACTOR_ROLLOUT_REWARD:-4}
-ROLLOUT_TP=${ROLLOUT_TP:-1}
-REWARD_TP=${REWARD_TP:-4}
+NUM_GPUS_ACTOR_ROLLOUT_REWARD=4
+ROLLOUT_TP=1
+REWARD_TP=4
 
 ENGINE=vllm_omni
 REWARD_ENGINE=vllm

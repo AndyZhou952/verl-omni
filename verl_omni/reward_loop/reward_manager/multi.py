@@ -166,6 +166,8 @@ class MultiVisualRewardManager(VisualRewardManager):
 
             except Exception as e:
                 logger.error(f"Sub-reward '{key}' raised an exception: {e}. Contributing 0 to weighted sum.")
+                if extra_args.get("fail_on_error", False):
+                    raise
                 score = 0.0
 
             reward_extra_info[f"reward/{key}"] = score
