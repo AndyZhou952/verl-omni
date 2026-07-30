@@ -58,8 +58,7 @@ class _ParityPipeline(SD3TokenIdPromptMixin):
         self.tokenizer = components["tokenizer"]
         self.tokenizer_2 = components["tokenizer_2"]
         self.tokenizer_3 = components["tokenizer_3"]
-        # Mimic SD3.5, where CLIP-G pads with a different token ("!") than
-        # CLIP-L ("<|endoftext|>"), to exercise per-encoder padding.
+        # Use a non-default pad token on CLIP-G so per-encoder padding differs from CLIP-L.
         self.tokenizer_2.pad_token = "<|startoftext|>"
         self.text_encoder = components["text_encoder"].eval()
         self.text_encoder_2 = components["text_encoder_2"].eval()

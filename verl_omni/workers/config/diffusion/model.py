@@ -180,7 +180,7 @@ class DiffusionModelConfig(BaseConfig):
                 path = spec.get("path") if hasattr(spec, "get") else None
                 if not path:
                     raise ValueError(f"extra_tokenizers[{name!r}] must define a 'path' entry.")
-                if not os.path.isabs(path) and not os.path.exists(path):
+                if not os.path.isabs(path):
                     path = os.path.join(self.local_path, path)
                 local_path = copy_to_local(path, use_shm=self.use_shm)
                 tokenizer = hf_tokenizer(local_path, trust_remote_code=self.trust_remote_code, use_fast=True)

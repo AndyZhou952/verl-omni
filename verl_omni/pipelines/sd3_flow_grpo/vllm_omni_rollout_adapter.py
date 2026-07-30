@@ -106,13 +106,20 @@ def _extract_extra_prompt_ids(prompts: list, key: str = "extra_prompt_ids") -> d
             return None
         per_prompt.append(extra)
 
-    missing = [name for name in SD3_ENCODER_TOKEN_KEYS if name not in per_prompt[0]]
-    if missing:
-        raise ValueError(
-            f"SD3 rollout requires {list(SD3_ENCODER_TOKEN_KEYS)} entries in '{key}' but {missing} are missing. "
-            "Configure `actor_rollout_ref.model.extra_tokenizers` with these names "
-            "(see examples/flowgrpo_trainer/sd35/run_sd35_medium_ocr_lora.sh)."
-        )
+    for idx, extra in enumerate(per_prompt):
+        missing = [name for name in SD3_ENCODER_TOKEN_KEYS if name not in extra]
+        if missing:
+            raise ValueError(
+                f"SD3 rollout requires {list(SD3_ENCODER_TOKEN_KEYS)} entries in '{key}' but {missing} "
+                f"are missing for prompt index {idx}. Configure `actor_rollout_ref.model.extra_tokenizers` "
+                "with these names (see examples/flowgrpo_trainer/sd35/run_sd35_medium_ocr_lora.sh)."
+            )
+        for name in SD3_ENCODER_TOKEN_KEYS:
+            if _to_token_list(extra[name]) is None:
+                raise ValueError(
+                    f"SD3 rollout expected list or tensor token ids for '{key}[{name}]' at prompt index {idx}, "
+                    f"got {type(extra[name]).__name__}."
+                )
     return {name: [_to_token_list(extra[name]) for extra in per_prompt] for name in SD3_ENCODER_TOKEN_KEYS}
 
 
