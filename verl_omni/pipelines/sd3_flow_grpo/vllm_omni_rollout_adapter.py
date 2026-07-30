@@ -216,21 +216,6 @@ class StableDiffusion3PipelineWithLogProb(SD3TokenIdPromptMixin, StableDiffusion
     def _model_dtype(self) -> torch.dtype:
         return self.od_config.dtype
 
-    def _to_encode_prompt_text(self, prompts: list) -> tuple[list[str] | None, list[str] | None]:
-        """Convert vLLM-Omni request prompts to plain text for ``encode_prompt()``."""
-        prompt, negative_prompt = _extract_text_prompts(prompts)
-        if prompt is not None:
-            return prompt, negative_prompt
-
-        prompt_ids, negative_prompt_ids = _extract_prompt_ids(prompts)
-        if prompt_ids is None:
-            return None, None
-
-        prompt = _decode_prompt_ids(self.tokenizer, prompt_ids)
-        if negative_prompt_ids is not None:
-            negative_prompt = _decode_prompt_ids(self.tokenizer, negative_prompt_ids)
-        return prompt, negative_prompt
-
     def _decode_latents(self, latents: torch.Tensor, output_type: str | None = None) -> torch.Tensor:
         output_type = self.output_type if output_type is None else output_type
         if output_type == "latent":
@@ -375,7 +360,7 @@ class StableDiffusion3PipelineWithLogProb(SD3TokenIdPromptMixin, StableDiffusion
             if extra_prompt_ids is not None
             else None
         )
-        req_prompt, req_negative_prompt = self._to_encode_prompt_text(req_prompts)
+        req_prompt, req_negative_prompt = _extract_text_prompts(req_prompts)
         prompt = req_prompt if req_prompt is not None else prompt
         negative_prompt = req_negative_prompt if req_negative_prompt is not None else negative_prompt
 
