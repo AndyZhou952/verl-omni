@@ -67,11 +67,6 @@ class DiffusionModelConfig(BaseConfig):
     processor: Any = None
 
     # Optional per-text-encoder tokenizers for models with multiple text encoders
-    # (e.g. SD3.5 uses CLIP + T5). Maps a name to ``{path, max_length}``, where
-    # ``path`` is absolute or relative to the model directory and ``max_length``
-    # is the optional truncation length applied at agent-loop tokenization time.
-    # The agent loop tokenizes the prompt once per entry and ships the token ids
-    # to the rollout pipeline, so the pipeline never needs to decode/re-encode.
     extra_tokenizers: Optional[dict[str, Any]] = None
 
     # Loaded tokenizers built from ``extra_tokenizers``:

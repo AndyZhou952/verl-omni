@@ -29,11 +29,6 @@ logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 @register("diffusion_single_turn_agent")
 class DiffusionSingleTurnAgentLoop(AgentLoopBase):
     """Agent loop for diffusion model serving.
-
-    Models with multiple text encoders (e.g. SD3.5) configure
-    ``actor_rollout_ref.model.extra_tokenizers`` so the prompt is tokenized once
-    per encoder here and the rollout pipeline consumes token ids directly,
-    instead of decoding and re-encoding text inside the pipeline.
     """
 
     def __init__(self, *args, extra_tokenizer_map: dict[str, dict[str, Any]] | None = None, **kwargs):
