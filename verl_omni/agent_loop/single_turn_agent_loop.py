@@ -28,8 +28,7 @@ logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
 @register("diffusion_single_turn_agent")
 class DiffusionSingleTurnAgentLoop(AgentLoopBase):
-    """Agent loop for diffusion model serving.
-    """
+    """Agent loop for diffusion model serving."""
 
     def __init__(self, *args, extra_tokenizer_map: dict[str, dict[str, Any]] | None = None, **kwargs):
         super().__init__(*args, **kwargs)
