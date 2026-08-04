@@ -46,6 +46,7 @@ examples/config.md
 
 algo/async_reward.md
 algo/rollout_correction.md
+algo/fully_async_omni.md
 start/rollout_batching.md
 start/http_scorer.md
 start/diffusion_v1.md

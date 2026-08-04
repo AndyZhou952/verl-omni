@@ -453,6 +453,7 @@ actor_rollout_ref:
     max_image_tokens: null
     max_audio_tokens: null
     max_video_tokens: null
+    weight_sync_exclude_regex: null
   hybrid_engine: true
   nccl_timeout: 600
 data:
@@ -923,6 +924,11 @@ trainer:
         path: null
         name: null
       sampler_kwargs: {}
+    omni_fully_async:
+      staleness_threshold: 1
+      parameter_sync_step: 1
+      rollout_recovery: continue
+      use_rollout_log_probs: false
 global_profiler:
   _target_: verl.utils.profiler.ProfilerConfig
   tool: null

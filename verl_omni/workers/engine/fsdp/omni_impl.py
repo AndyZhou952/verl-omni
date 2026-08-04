@@ -14,6 +14,7 @@
 """FSDP engine for omni models, registered as ``model_type="omni_model"``."""
 
 import logging
+import re
 import warnings
 
 import torch
@@ -59,6 +60,11 @@ class OmniFSDPEngine(FSDPEngineWithLMHead):
 
         peft_model = getattr(self.module, "_fsdp_wrapped_module", self.module)
         if hasattr(peft_model, "peft_config"):  # LoRA
+            if getattr(self.model_config, "weight_sync_exclude_regex", None):
+                raise ValueError(
+                    "weight_sync_exclude_regex is only supported for full-parameter training; "
+                    "LoRA weight sync already ships adapter tensors only"
+                )
             if not merge_lora:
                 peft_config = peft_model.peft_config.get("default", None)
                 # DIFF vs upstream: use verl_omni's fixed collect_lora_params
@@ -73,6 +79,9 @@ class OmniFSDPEngine(FSDPEngineWithLMHead):
                 return self._merged_lora_per_tensor_param(), None
         else:
             params = self.module.state_dict()
+            exclude_regex = getattr(self.model_config, "weight_sync_exclude_regex", None)
+            if exclude_regex:
+                params = self._exclude_weight_sync_params(params, exclude_regex)
 
         params = convert_weight_keys(params, getattr(self.module, "_fsdp_wrapped_module", self.module))
 
@@ -121,6 +130,46 @@ class OmniFSDPEngine(FSDPEngineWithLMHead):
         peft_config_dict = peft_config.to_dict() if peft_config is not None else None
 
         return per_tensor_param, peft_config_dict
+
+    def _exclude_weight_sync_params(self, params, exclude_regex):
+        """Drop frozen parameters matching ``exclude_regex`` from weight sync.
+
+        Fail-closed: raises if a matched name is trainable, or is neither a known
+        parameter nor a buffer (so a stale regex can never silently skip live weights).
+        """
+        pattern = re.compile(exclude_regex)
+        strip = lambda name: name.replace("_fsdp_wrapped_module.", "")
+        requires_grad = {strip(name): param.requires_grad for name, param in self.module.named_parameters()}
+        buffer_names = {strip(name) for name, _ in self.module.named_buffers()}
+
+        if any("_flat_param" in name for name in requires_grad):
+            raise ValueError(
+                "weight_sync_exclude_regex requires per-tensor parameter names; FSDP1 exposes "
+                "flat parameters only — use strategy=fsdp2"
+            )
+
+        kept, excluded = {}, 0
+        for name, param in params.items():
+            clean = strip(name)
+            if not pattern.search(clean):
+                kept[name] = param
+                continue
+            if clean in buffer_names:
+                excluded += 1
+            elif clean in requires_grad:
+                if requires_grad[clean]:
+                    raise ValueError(
+                        f"weight_sync_exclude_regex {exclude_regex!r} matches trainable parameter "
+                        f"{clean!r}; only frozen parameters may be excluded from weight sync"
+                    )
+                excluded += 1
+            else:
+                raise ValueError(
+                    f"weight_sync_exclude_regex {exclude_regex!r} matches {clean!r}, which cannot be "
+                    "verified as frozen (not found among module parameters or buffers)"
+                )
+        logger.info(f"weight sync: excluded {excluded} frozen tensors matching {exclude_regex!r}")
+        return kept
 
     def _merged_lora_per_tensor_param(self):
         """Stream materialized merged weights before restoring the actor."""

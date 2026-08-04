@@ -537,3 +537,91 @@ def test_merged_lora_per_tensor_param_with_lora_context_manager():
         actor, backup = entered[0]
         assert actor is module
         assert backup is True
+
+
+# ---------------------------------------------------------------------------
+# Weight-sync exclusion (weight_sync_exclude_regex)
+# ---------------------------------------------------------------------------
+
+
+def _make_tower_module():
+    """Module with frozen towers (plus a buffer) and a trainable head."""
+    import torch.nn as nn
+
+    module = nn.Module()
+    module.visual = nn.Linear(2, 2)
+    module.audio_tower = nn.Linear(2, 2)
+    module.thinker = nn.Linear(2, 2)
+    module.visual.register_buffer("rot", torch.ones(2))
+    for param in module.visual.parameters():
+        param.requires_grad = False
+    for param in module.audio_tower.parameters():
+        param.requires_grad = False
+    return module
+
+
+def _exclusion_engine(module):
+    omni_impl = _get_omni_impl_module()
+    engine = object.__new__(omni_impl.OmniFSDPEngine)
+    engine.module = module
+    return engine
+
+
+class TestWeightSyncExclusion:
+    def test_excludes_frozen_towers_and_buffers(self):
+        module = _make_tower_module()
+        engine = _exclusion_engine(module)
+
+        kept = engine._exclude_weight_sync_params(module.state_dict(), r".*visual.*|.*audio_tower.*")
+
+        assert set(kept) == {"thinker.weight", "thinker.bias"}
+
+    def test_trainable_match_raises(self):
+        module = _make_tower_module()
+        engine = _exclusion_engine(module)
+
+        with pytest.raises(ValueError, match="trainable parameter"):
+            engine._exclude_weight_sync_params(module.state_dict(), r".*thinker.*")
+
+    def test_unverifiable_match_raises(self):
+        module = _make_tower_module()
+        engine = _exclusion_engine(module)
+        params = dict(module.state_dict())
+        params["visual.ghost"] = torch.zeros(1)
+
+        with pytest.raises(ValueError, match="verified as frozen"):
+            engine._exclude_weight_sync_params(params, r".*visual.*")
+
+    def test_fsdp_wrapper_prefix_is_normalized(self):
+        module = _make_tower_module()
+        engine = _exclusion_engine(module)
+        params = {f"_fsdp_wrapped_module.{name}": value for name, value in module.state_dict().items()}
+
+        kept = engine._exclude_weight_sync_params(params, r".*visual.*|.*audio_tower.*")
+
+        assert set(kept) == {"_fsdp_wrapped_module.thinker.weight", "_fsdp_wrapped_module.thinker.bias"}
+
+    def test_lora_with_exclusion_raises(self):
+        omni_impl = _get_omni_impl_module()
+        module = _make_tower_module()
+        module.peft_config = {"default": None}
+
+        engine = object.__new__(omni_impl.OmniFSDPEngine)
+        engine.module = module
+        engine.model_config = _make_mock_model_config(weight_sync_exclude_regex=".*visual.*")
+        engine._uses_fsdp2_cpu_offload_policy = True
+
+        with patch.object(omni_impl, "log_gpu_memory_usage", MagicMock()):
+            with pytest.raises(ValueError, match="full-parameter"):
+                engine.get_per_tensor_param()
+
+    def test_fsdp1_flat_params_raise_clear_error(self):
+        import torch.nn as nn
+
+        module = _make_tower_module()
+        # FSDP1 with use_orig_params=False exposes only flat parameters.
+        module.thinker._parameters["_flat_param"] = nn.Parameter(torch.zeros(4))
+        engine = _exclusion_engine(module)
+
+        with pytest.raises(ValueError, match="fsdp2"):
+            engine._exclude_weight_sync_params(module.state_dict(), r".*visual.*")

@@ -67,6 +67,24 @@ trainer:
     # Use the omni trainer mode for omni models.
     trainer_mode: omni_sync
 
+    # Omni fully-async trainer mode: prompt submission is decoupled from the
+    # trainer's step cadence and paced by a staleness gate.
+    omni_fully_async:
+
+      # Max trainer steps a sample's generation weights may trail its use (k >= 0).
+      # The gate keeps at most k + 1 prompt batches in flight (implicit warmup).
+      staleness_threshold: 1
+
+      # Push weights to standalone replicas every N trainer steps.
+      parameter_sync_step: 1
+
+      # Recovery for generations aborted by weight sync: continue | whole_sample_retry.
+      rollout_recovery: continue
+
+      # Trust rollout log-probs (bypass trainer recompute). Off by default because
+      # continuations may span weight versions.
+      use_rollout_log_probs: false
+
 
 # Config for the algorithm.
 algorithm:
