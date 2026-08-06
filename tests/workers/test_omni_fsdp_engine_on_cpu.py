@@ -540,7 +540,7 @@ def test_merged_lora_per_tensor_param_with_lora_context_manager():
 
 
 # ---------------------------------------------------------------------------
-# Weight-sync exclusion (weight_sync_exclude_regex)
+# Weight-sync exclusion (weight_sync_exclude_frozen)
 # ---------------------------------------------------------------------------
 
 
@@ -568,60 +568,40 @@ def _exclusion_engine(module):
 
 
 class TestWeightSyncExclusion:
-    def test_excludes_frozen_towers_and_buffers(self):
+    def test_drops_frozen_keeps_trainable_and_buffers(self):
         module = _make_tower_module()
         engine = _exclusion_engine(module)
 
-        kept = engine._exclude_weight_sync_params(module.state_dict(), r".*visual.*|.*audio_tower.*")
+        kept = engine._exclude_weight_sync_params(module.state_dict())
+        assert set(kept) == {"thinker.weight", "thinker.bias", "visual.rot"}
 
-        assert set(kept) == {"thinker.weight", "thinker.bias"}
+        # FSDP wrapper prefix is normalized when matching named_parameters.
+        prefixed = {f"_fsdp_wrapped_module.{name}": value for name, value in module.state_dict().items()}
+        kept = engine._exclude_weight_sync_params(prefixed)
+        assert set(kept) == {
+            "_fsdp_wrapped_module.thinker.weight",
+            "_fsdp_wrapped_module.thinker.bias",
+            "_fsdp_wrapped_module.visual.rot",
+        }
 
-    def test_trainable_match_raises(self):
-        module = _make_tower_module()
-        engine = _exclusion_engine(module)
-
-        with pytest.raises(ValueError, match="trainable parameter"):
-            engine._exclude_weight_sync_params(module.state_dict(), r".*thinker.*")
-
-    def test_unverifiable_match_raises(self):
-        module = _make_tower_module()
-        engine = _exclusion_engine(module)
-        params = dict(module.state_dict())
-        params["visual.ghost"] = torch.zeros(1)
-
-        with pytest.raises(ValueError, match="verified as frozen"):
-            engine._exclude_weight_sync_params(params, r".*visual.*")
-
-    def test_fsdp_wrapper_prefix_is_normalized(self):
-        module = _make_tower_module()
-        engine = _exclusion_engine(module)
-        params = {f"_fsdp_wrapped_module.{name}": value for name, value in module.state_dict().items()}
-
-        kept = engine._exclude_weight_sync_params(params, r".*visual.*|.*audio_tower.*")
-
-        assert set(kept) == {"_fsdp_wrapped_module.thinker.weight", "_fsdp_wrapped_module.thinker.bias"}
-
-    def test_lora_with_exclusion_raises(self):
+    @pytest.mark.parametrize("scenario, match", [("fsdp1_flat_param", "fsdp2"), ("lora", "full-parameter")])
+    def test_guards_raise(self, scenario, match):
         omni_impl = _get_omni_impl_module()
         module = _make_tower_module()
-        module.peft_config = {"default": None}
 
-        engine = object.__new__(omni_impl.OmniFSDPEngine)
-        engine.module = module
-        engine.model_config = _make_mock_model_config(weight_sync_exclude_regex=".*visual.*")
-        engine._uses_fsdp2_cpu_offload_policy = True
+        if scenario == "fsdp1_flat_param":
+            import torch.nn as nn
 
-        with patch.object(omni_impl, "log_gpu_memory_usage", MagicMock()):
-            with pytest.raises(ValueError, match="full-parameter"):
+            # FSDP1 with use_orig_params=False exposes only flat parameters.
+            module.thinker._parameters["_flat_param"] = nn.Parameter(torch.zeros(4))
+            engine = _exclusion_engine(module)
+            with pytest.raises(ValueError, match=match):
+                engine._exclude_weight_sync_params(module.state_dict())
+        else:
+            module.peft_config = {"default": None}
+            engine = object.__new__(omni_impl.OmniFSDPEngine)
+            engine.module = module
+            engine.model_config = _make_mock_model_config(weight_sync_exclude_frozen=True)
+            engine._uses_fsdp2_cpu_offload_policy = True
+            with patch.object(omni_impl, "log_gpu_memory_usage", MagicMock()), pytest.raises(ValueError, match=match):
                 engine.get_per_tensor_param()
-
-    def test_fsdp1_flat_params_raise_clear_error(self):
-        import torch.nn as nn
-
-        module = _make_tower_module()
-        # FSDP1 with use_orig_params=False exposes only flat parameters.
-        module.thinker._parameters["_flat_param"] = nn.Parameter(torch.zeros(4))
-        engine = _exclusion_engine(module)
-
-        with pytest.raises(ValueError, match="fsdp2"):
-            engine._exclude_weight_sync_params(module.state_dict(), r".*visual.*")

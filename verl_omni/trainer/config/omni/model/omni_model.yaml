@@ -184,7 +184,3 @@ max_image_tokens: null
 max_audio_tokens: null
 
 max_video_tokens: null
-
-# Regex of frozen parameter names to skip during actor->rollout weight sync
-# (e.g. ".*visual.*|.*audio_tower.*"). Full-param sync only.
-weight_sync_exclude_regex: null

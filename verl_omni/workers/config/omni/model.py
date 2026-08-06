@@ -139,10 +139,8 @@ class OmniModelConfig(BaseConfig):
     max_audio_tokens: Optional[int] = None
     max_video_tokens: Optional[int] = None
 
-    # Regex of frozen parameter names to skip during actor->rollout weight sync
-    # (e.g. ".*visual.*|.*audio_tower.*"). Verified against requires_grad at sync
-    # time; full-param sync only (LoRA sync already ships adapter tensors only).
-    weight_sync_exclude_regex: Optional[str] = None
+    # Skip frozen (requires_grad=False) parameters during actor->rollout weight sync.
+    weight_sync_exclude_frozen: bool = False
 
     def __post_init__(self):
         import_external_libs(self.external_lib)

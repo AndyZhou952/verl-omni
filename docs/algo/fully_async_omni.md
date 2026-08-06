@@ -1,7 +1,7 @@
 (fully_async_omni)=
 # Fully-Async RL Training for Qwen3-Omni
 
-Last updated: 08/04/2026
+Last updated: 08/06/2026
 
 `trainer.v1.trainer_mode=omni_fully_async` decouples rollout generation from
 the trainer's step cadence for omni AR models (Qwen3-Omni thinker). Standalone
@@ -48,7 +48,7 @@ uses GSPO + GRPO advantages with LoRA. Key overrides:
 | `trainer.v1.omni_fully_async.parameter_sync_step` | 1 | push weights to standalone replicas every N steps |
 | `trainer.v1.omni_fully_async.rollout_recovery` | `continue` | `continue` resumes aborted generations under new weights; `whole_sample_retry` regenerates them |
 | `trainer.v1.omni_fully_async.use_rollout_log_probs` | false | keep the separate-async bypass instead of recomputing old_log_probs |
-| `actor_rollout_ref.model.weight_sync_exclude_regex` | null | frozen parameters to skip during full-param weight sync, e.g. `".*visual.*\|.*audio_tower.*"` (fails fast if a match is trainable; full-param + fsdp2 only; rejected with `load_format=dummy`) |
+| `actor_rollout_ref.model.weight_sync_exclude_frozen` | false | skip frozen parameters during full-param weight sync; fsdp2 only; rejected with `load_format=dummy` |
 | `actor_rollout_ref.rollout.checkpoint_engine.backend` | — | must be non-naive (`nccl`, `nixl`, `mooncake`) |
 
 Constraints enforced at startup: `data.train_batch_size ==
@@ -106,8 +106,8 @@ For a parity check against the synchronous baseline, run the same recipe with
   window and every validation (kept current via the colocated checkpoint
   engine), and sleep during training phases; idle-borrowing beyond that follows
   the upstream `should_switch_to_rollout` TODO.
-- `weight_sync_exclude_regex` requires fsdp2 (FSDP1 exposes flat parameters
-  only) and a real-weight `load_format`.
+- `weight_sync_exclude_frozen` requires fsdp2 (FSDP1 flat parameters lose
+  per-tensor `requires_grad`) and a real-weight `load_format`.
 - NPU AR sleep/wake relies on vllm-ascend behavior.
 - Decoupled-PPO-style correction for version-spanning sequences is tracked
   upstream; use `rollout_correction` (e.g. TIS) when raising staleness.

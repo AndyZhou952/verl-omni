@@ -36,7 +36,7 @@ from verl.utils.debug import marked_timer
 from verl_omni.workers.checkpoint_engine import OmniCheckpointEngineManager
 from verl_omni.workers.config import OmniModelConfig
 from verl_omni.workers.engine_workers import ActorRolloutRefWorker
-from verl_omni.workers.rollout.diffusion_llm_server import DiffusionWholeSampleRetryLLMServerClient
+from verl_omni.workers.rollout.retry_llm_server import WholeSampleRetryLLMServerClient
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "INFO"))
@@ -110,10 +110,10 @@ class OmniPPOTrainerFullyAsync(PPOTrainerSeparateAsync):
 
         # Hybrid replicas are woken for the first sampling window and validations; with
         # dummy load_format their excluded (never-synced) towers would stay random.
-        exclude_regex = config.actor_rollout_ref.model.get("weight_sync_exclude_regex", None)
-        if exclude_regex and config.actor_rollout_ref.rollout.load_format == "dummy":
+        exclude_frozen = config.actor_rollout_ref.model.get("weight_sync_exclude_frozen", False)
+        if exclude_frozen and config.actor_rollout_ref.rollout.load_format == "dummy":
             raise ValueError(
-                "weight_sync_exclude_regex requires a real-weight rollout load_format "
+                "weight_sync_exclude_frozen requires a real-weight rollout load_format "
                 "(e.g. safetensors); load_format=dummy would leave excluded towers uninitialized"
             )
 
@@ -148,8 +148,7 @@ class OmniPPOTrainerFullyAsync(PPOTrainerSeparateAsync):
 
     def get_llm_client(self):
         if self.rollout_recovery == "whole_sample_retry":
-            # Generic abort-then-resubmit-whole-sample client (despite the diffusion name).
-            return self.standalone_server_manager.get_client(client_cls=DiffusionWholeSampleRetryLLMServerClient)
+            return self.standalone_server_manager.get_client(client_cls=WholeSampleRetryLLMServerClient)
         return super().get_llm_client()
 
     def _add_batch_to_generate(self):
