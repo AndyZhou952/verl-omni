@@ -38,21 +38,6 @@ class OmniCheckpointEngineManager(CheckpointEngineManager):
             self._lora_peft_config = peft_config
             await self._push_lora_peft_config_to_replicas(peft_config)
         await super().update_weights(global_steps=global_steps)
-        # Ensure HTTP servers stamp TokenOutput.extra_fields['global_steps'].
-        # Upstream ServerAdapter does this after IPC; omni LoRA NCCL can miss it.
-        await self._set_replica_global_steps(global_steps)
-
-    async def _set_replica_global_steps(self, global_steps: int | None) -> None:
-        if global_steps is None:
-            return
-        futures = [
-            replica.server_handle.set_global_steps.remote(global_steps)
-            for replica in self.replicas
-            if getattr(replica, "server_handle", None) is not None
-        ]
-        if futures:
-            ray.get(futures)
-            logger.debug("set_global_steps(%s) on %d replica servers", global_steps, len(futures))
 
     async def _push_lora_peft_config_to_replicas(self, peft_config: dict | None) -> None:
         """Fetch ``peft_config`` from the actor (collective-free) and stash it

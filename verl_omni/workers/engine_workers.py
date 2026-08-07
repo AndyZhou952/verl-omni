@@ -1056,6 +1056,10 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
             await sender.async_send_weights(lora_weights.items())
             if future is not None:
                 await future
+            # The IPC fast path bypasses ServerAdapter.update_weights, which is what
+            # normally stamps the server's weight version for staleness tags.
+            if self.rollout.rollout_rank == 0 and global_steps is not None:
+                await self.rollout.server_handle.set_global_steps.remote(global_steps)
             timings["update_weights_sync"] = time.perf_counter() - sync_start
             offloaded = True
         else:
