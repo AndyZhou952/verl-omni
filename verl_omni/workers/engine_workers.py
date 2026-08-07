@@ -52,7 +52,6 @@ from verl.workers.config import (
     TrainingWorkerConfig,
 )
 from verl.workers.rollout.base import BaseRollout, get_rollout_class
-from verl.workers.rollout.vllm_rollout.bucketed_weight_transfer import BucketedWeightSender
 from verl.workers.utils.losses import ppo_loss
 
 from verl_omni.utils.mfu import (
@@ -93,19 +92,6 @@ def _with_routing_replay_flag(enabled: bool):
         return wrapper
 
     return decorator
-
-
-def _make_update_zmq_handle(base_handle: str, global_steps: int | None) -> str:
-    """Return a per-update IPC handle so repeated LoRA syncs cannot collide."""
-    if not base_handle.startswith("ipc://"):
-        return base_handle
-
-    path = base_handle.removeprefix("ipc://")
-    if path.endswith(".sock"):
-        path = path[: -len(".sock")]
-    step = "none" if global_steps is None else str(global_steps)
-    unique_suffix = f"-step-{step}-pid-{os.getpid()}-{time.time_ns()}"
-    return f"ipc://{path}{unique_suffix}.sock"
 
 
 class TrainingWorker(Worker, DistProfilerExtension):
@@ -1032,34 +1018,14 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
             # Launch the actor offload in the background so it overlaps the sync.
             offload_task = asyncio.create_task(asyncio.to_thread(self._offload_actor_and_empty_cache, timings))
 
-            # Use ZMQ IPC to transfer LoRA weights, bypassing Ray serialization.
-            # The _execute_method call only carries a small metadata dict (peft_config,
-            # base_sync_done, use_shm) — tensor data goes through the ZMQ socket.
+            # Send through the adapter's standard per-rank path: each rank's sender
+            # pairs 1:1 with the TP worker that derives the same zmq socket. A single
+            # broadcast handle cross-wires REQ/REP at TP > 1 (receivers split the
+            # message stream; unpaired senders hang).
             sync_start = time.perf_counter()
-            zmq_handle = _make_update_zmq_handle(self.rollout.zmq_handle, global_steps)
-            future = await self.rollout._execute_method(
-                "update_weights_from_ipc",
-                non_block=True,
-                kwargs={
-                    "peft_config": peft_config,
-                    "base_sync_done": True,
-                    "use_shm": self.rollout.use_shm,
-                    "zmq_handle": zmq_handle,
-                },
+            await self.rollout.update_weights(
+                iter(lora_weights.items()), peft_config=peft_config, base_sync_done=True, global_steps=global_steps
             )
-            bucket_size_mb = self.config.rollout.checkpoint_engine.update_weights_bucket_megabytes
-            sender = BucketedWeightSender(
-                zmq_handle=zmq_handle,
-                bucket_size_mb=bucket_size_mb,
-                use_shm=self.rollout.use_shm,
-            )
-            await sender.async_send_weights(lora_weights.items())
-            if future is not None:
-                await future
-            # The IPC fast path bypasses ServerAdapter.update_weights, which is what
-            # normally stamps the server's weight version for staleness tags.
-            if self.rollout.rollout_rank == 0 and global_steps is not None:
-                await self.rollout.server_handle.set_global_steps.remote(global_steps)
             timings["update_weights_sync"] = time.perf_counter() - sync_start
             offloaded = True
         else:
