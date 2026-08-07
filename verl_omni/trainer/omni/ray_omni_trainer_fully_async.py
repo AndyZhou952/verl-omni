@@ -146,6 +146,34 @@ class OmniPPOTrainerFullyAsync(PPOTrainerSeparateAsync):
             replicas=self.standalone_server_manager.get_replicas(),
         )
 
+    def on_init_end(self):
+        super().on_init_end()
+        self._stamp_all_rollout_global_steps(self.global_steps)
+
+    def _stamp_all_rollout_global_steps(self, global_steps: int) -> None:
+        """Stamp hybrid + standalone HTTP servers (both may sit on the LB)."""
+        if global_steps is None:
+            return
+        handles = []
+        for mgr_name in ("llm_server_manager", "standalone_server_manager"):
+            mgr = getattr(self, mgr_name, None)
+            if mgr is None:
+                continue
+            for h in getattr(mgr, "server_handles", []) or []:
+                if h is not None:
+                    handles.append(h)
+        seen, uniq = set(), []
+        for h in handles:
+            i = id(h)
+            if i not in seen:
+                seen.add(i)
+                uniq.append(h)
+        if not uniq:
+            logger.warning("no rollout servers for set_global_steps(%s)", global_steps)
+            return
+        ray.get([h.set_global_steps.remote(int(global_steps)) for h in uniq])
+        logger.info("stamped set_global_steps(%s) on %d servers", global_steps, len(uniq))
+
     def get_llm_client(self):
         if self.rollout_recovery == "whole_sample_retry":
             return self.standalone_server_manager.get_client(client_cls=WholeSampleRetryLLMServerClient)
@@ -184,3 +212,4 @@ class OmniPPOTrainerFullyAsync(PPOTrainerSeparateAsync):
         if self.global_steps % self.parameter_sync_step == 0:
             with marked_timer("update_weights", self.timing_raw, color="red"):
                 self.standalone_checkpoint_manager.update_weights(self.global_steps)
+            self._stamp_all_rollout_global_steps(self.global_steps)

@@ -307,6 +307,10 @@ class vLLMOmniHttpServer(vLLMHttpServer):
             self._invalidate_lora_request_cache()
         await super().set_global_steps(global_steps)
 
+    def _global_steps_for_output(self) -> int:
+        # Trainer metrics cast min/max_global_steps to int; never emit None.
+        return 0 if self.global_steps is None else int(self.global_steps)
+
     async def _sleep_hybrid(self):
         """Preserve non-actor pipeline weights during hybrid training sleep.
 
@@ -553,7 +557,7 @@ class vLLMOmniHttpServer(vLLMHttpServer):
             if req_output is None:
                 raise RuntimeError("AR mode expects request_output with token IDs, but got None.")
 
-            extra_fields = {"global_steps": self.global_steps}
+            extra_fields = {"global_steps": self._global_steps_for_output()}
             token_ids = req_output.outputs[0].token_ids
             log_probs = None
             if params.logprobs is not None:
@@ -595,7 +599,7 @@ class vLLMOmniHttpServer(vLLMHttpServer):
                 log_probs=None,
                 stop_reason=stop_reason,
                 num_preempted=None,
-                extra_fields={"global_steps": self.global_steps},
+                extra_fields={"global_steps": self._global_steps_for_output()},
             )
 
         assert final_res is not None
@@ -628,7 +632,7 @@ class vLLMOmniHttpServer(vLLMHttpServer):
             return value
 
         extra_fields = {k: _maybe_unbatch(v) for k, v in mm_output.items() if k != "all_log_probs"}
-        extra_fields["global_steps"] = self.global_steps
+        extra_fields["global_steps"] = self._global_steps_for_output()
 
         if final_res.request_output is not None and hasattr(final_res.request_output, "finish_reason"):
             finish_reason = final_res.request_output.finish_reason or "stop"
