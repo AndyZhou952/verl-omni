@@ -1,7 +1,7 @@
 (fully_async_omni)=
 # Fully-Async RL Training for Qwen3-Omni
 
-Last updated: 08/06/2026
+Last updated: 08/07/2026
 
 `trainer.v1.trainer_mode=omni_fully_async` decouples rollout generation from
 the trainer's step cadence for omni AR models (Qwen3-Omni thinker). Standalone
@@ -48,13 +48,14 @@ uses GSPO + GRPO advantages with LoRA. Key overrides:
 | `trainer.v1.omni_fully_async.parameter_sync_step` | 1 | push weights to standalone replicas every N steps |
 | `trainer.v1.omni_fully_async.rollout_recovery` | `continue` | `continue` resumes aborted generations under new weights; `whole_sample_retry` regenerates them |
 | `trainer.v1.omni_fully_async.use_rollout_log_probs` | false | keep the separate-async bypass instead of recomputing old_log_probs |
-| `actor_rollout_ref.model.weight_sync_exclude_frozen` | false | skip frozen parameters during full-param weight sync; fsdp2 only; rejected with `load_format=dummy` |
+| `actor_rollout_ref.model.weight_sync_exclude_frozen` | false | skip frozen parameters during full-param weight sync; fsdp2 only; rejected with `load_format=dummy`; dataclass-only key — set with a `+` override |
 | `actor_rollout_ref.rollout.checkpoint_engine.backend` | — | must be non-naive (`nccl`, `nixl`, `mooncake`) |
 
 Constraints enforced at startup: `data.train_batch_size ==
 actor_rollout_ref.actor.ppo_mini_batch_size` (one optimizer step per consumed
 batch), rollout GPUs > 0, non-naive checkpoint backend, and
-`(staleness_threshold + 1) / parameter_sync_step <= max_off_policy_threshold`.
+`(staleness_threshold + 1) / parameter_sync_step <= max_off_policy_threshold`
+(strict `<` under the `wait` strategy, which stalls at equality).
 
 LoRA recipes should set `actor_rollout_ref.model.lora.merge=False` so weight
 sync ships only adapter tensors (applied on the replicas via the LoRA-aware

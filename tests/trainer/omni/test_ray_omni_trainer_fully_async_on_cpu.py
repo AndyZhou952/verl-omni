@@ -219,6 +219,17 @@ class TestLoraAwareWiring:
         modified = trainer.role_worker_mapping[role].__ray_metadata__.modified_class
         assert modified.__module__.startswith("verl_omni"), modified.__module__
 
+    def test_swapped_worker_exposes_upstream_v1_log_prob_methods(self):
+        # The upstream v1 trainer calls these on the swapped-in worker group when
+        # use_rollout_log_probs=false; an unregistered name only fails at Ray
+        # dispatch time on GPU.
+        from verl.single_controller.base.decorator import MAGIC_ATTR
+
+        from verl_omni.workers.engine_workers import ActorRolloutRefWorker
+
+        for name in ("compute_log_prob", "compute_ref_log_prob"):
+            assert hasattr(getattr(ActorRolloutRefWorker, name), MAGIC_ATTR), name
+
     def test_setup_installs_lora_aware_checkpoint_manager(self):
         from verl.checkpoint_engine import CheckpointEngineRegistry
 
