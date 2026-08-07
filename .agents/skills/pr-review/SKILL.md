@@ -21,12 +21,19 @@ gh pr diff <N> --repo verl-project/verl-omni
 gh pr checks <N> --repo verl-project/verl-omni
 ```
 
+(The `reviews` field is optional context — omit it when an independent/blind first-pass
+review is wanted.)
+
 Record process flags immediately: CI never ran ("no checks reported") / red / label-gated
 GPU smoke not triggered (`ready-for-ci` labels are stripped on every push); approvals
 granted before CI; PR title violating `[{modules}] {type}: {description}` (source of truth:
 `tests/special_sanity/check_pr_title.py`); missing `[BREAKING]` on config/API renames;
 description missing test commands or training evidence; description not stating **which
-configurations were actually exercised**.
+configurations were actually exercised**. Also check the commit history: a messy or
+long-diverged history gets "please rebase with latest main first" before detailed review —
+and watch for **stacked-PR residue**: description bullets describing behavior that is
+already on `main` (only tests or follow-ups land here). The description must match this
+diff; flag every bullet with no corresponding hunk.
 
 ## Step 1 — Route to module knowledge
 
@@ -42,6 +49,11 @@ skill's `references/` directory):
 | `verl_omni/workers/` (rest), `verl_omni/models/` | `workers-engine.md` |
 | `verl_omni/utils/`, `docs/`, `tests/`, `.github/` | `utils-tests-docs-ci.md` |
 
+Note: for **omni** trainer configs (`omni_trainer.yaml` and siblings), the diffusion config
+reference only partially applies — the omni-specific hazards (hydra `searchpath` overlay on
+upstream `ppo_trainer`, deprecated upstream roots, keys read only by upstream code, silent
+breakage on verl pin bumps) are in `repo-map.md`'s config section; check those explicitly.
+
 Then read the **current repo state** around every hunk — never review a diff in isolation.
 Most blockers live in the interaction between new code and unchanged code.
 
@@ -54,8 +66,13 @@ without them:
    intent ("What is the bug are you trying to fix? Can you post a issue first?").
 2. **Evidence**: training-affecting changes (trainer math, rollout, engines, examples)
    need a human-readable reward + validation curve in the description — read it
-   critically (converging? delta plausible?). Perf claims need a controlled comparison
-   (one variable changed). Benchmark numbers must be confirmed as actually measured.
+   critically (converging? delta plausible?), and download/inspect embedded evidence
+   images rather than trusting captions. Wall-clock/timing charts are NOT training
+   evidence. For opt-in features, verify the diff is actually **inert when the flag is
+   off** — any code-path change that executes unconditionally raises the evidence bar to
+   a training-metric comparison (reward/KL/logprob-ratio, one variable changed). Perf
+   claims need a controlled comparison. Benchmark numbers must be confirmed as actually
+   measured.
 3. **Scope**: single purpose; refactors separate from features; risky infrastructure
    (seeds, determinism, engines) separate from algorithm work. If oversized (>~20 files
    or multiple concerns), propose the concrete split (interface PR / feature PR / docs PR
@@ -103,6 +120,24 @@ configured, or subclassed?" Verify claimed upstream gaps against actual verl sou
 Extend and register (EngineRegistry, RolloutReplicaRegistry, agent-loop `@register`,
 `@register_trainer`), don't fork. Structural changes must match the current RFC direction.
 
+**Verify upstream at the pin, not the local install.** The locally installed verl/vllm-omni
+may not match CI. Read third-party source at the pinned commit:
+
+```bash
+PIN=$(cat .github/verl_pin.txt)   # or vllm_omni_pin.txt / vllm_ascend_pin.txt
+gh api "repos/verl-project/verl/contents/<path>?ref=$PIN" --jq .content | base64 -d
+```
+
+Decisive questions this answers: does the pinned upstream actually read a new config key
+(write-only keys are silent no-ops)? Is the upstream fix the PR depends on inside the pin
+(merged-after-pin or unmerged = the validated stack is not reproducible from this repo —
+require a pin bump in the same PR or an explicit re-scope)? Does an overridden method
+differ from the pinned parent at all?
+
+This step is mandatory whenever the diff touches upstream-coupled code, and the report
+must state which pinned sources were actually read — an upstream-compatibility claim
+without a quoted pinned source is unverified.
+
 ### 3f. Dead code & AI-slop scan
 Grep every added symbol for real usage. Flag: write-only fields, one-caller wrappers,
 single-implementation registries, banner comments, docstrings longer than the code,
@@ -117,7 +152,22 @@ reuse existing families plus a switch over parallel inventions; no back-compat s
 unreleased APIs; validation guards live in `__post_init__` or where the value
 materializes, not scattered in trainer loops.
 
+**Knob-coverage parity (required for every new feature flag):** enumerate every sibling
+pipeline/adapter/backend the knob plausibly applies to and verify it actually takes
+effect on each. A knob that silently no-ops on some pipelines (wrong method wrapped,
+different code path, missing override) is a finding: either extend coverage, or document
+the supported list in the yaml comment with an owner TODO for the rest. Also sync
+user-facing knobs into `docs/examples/config.md` where sibling knobs of the same family
+are already documented.
+
 ### 3h. Tests & CI simulation
+If the local environment cannot execute the tests, simulate instead of skipping — the
+fallback ladder: (1) apply the diff in a scratch worktree; (2) re-run deterministic
+generators (`scripts/generate_trainer_config.sh`) and diff outputs; (3) `python -m
+py_compile` + `ruff check` on changed files; (4) statically walk each new test: imports
+resolvable in the target CI image? fixtures real? assertions meaningful? State in the
+report which rungs you used.
+
 Will new tests be **collected**? (`*_on_cpu.py` naming — misnamed = silently never runs.)
 Do imports resolve in the CPU image (lazy imports; `tests/special_sanity/test_import.py`)?
 Fold into existing suites instead of new files; CPU tests mock, never run real models;
