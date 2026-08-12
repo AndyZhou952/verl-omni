@@ -166,10 +166,20 @@ def _build_ae_state_dict() -> dict[str, torch.Tensor]:
 
 
 def _build_vit_state_dict(vit_config: dict) -> dict[str, torch.Tensor]:
-    """Random SiglipVisionModel weights, keyed under ``vit_model.`` like the published checkpoint."""
+    """Random SiglipVisionModel weights, keyed like ``SiglipNaViTWrapper`` expects.
+
+    ``SiglipNaViTWrapper`` unwraps ``SiglipVisionModel.vision_model`` when present
+    (older transformers) or wraps the flat model as-is (newer transformers, which
+    dropped that inner submodule) -- either way its own state_dict keys end up
+    under a single ``vision_model.`` level. Mirror that here instead of assuming
+    one transformers layout.
+    """
     config = SiglipVisionConfig(**vit_config, vision_use_head=False)
     vit = SiglipVisionModel(config)
-    return {f"vit_model.{name}": tensor.detach().contiguous() for name, tensor in vit.state_dict().items()}
+    inner = vit.vision_model if hasattr(vit, "vision_model") else vit
+    return {
+        f"vit_model.vision_model.{name}": tensor.detach().contiguous() for name, tensor in inner.state_dict().items()
+    }
 
 
 def _build_bagel_und_state_dict(
