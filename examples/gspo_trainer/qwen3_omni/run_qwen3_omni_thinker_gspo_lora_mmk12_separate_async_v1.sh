@@ -19,9 +19,12 @@ set -x
 # Make verl_omni available to Ray workers
 export VERL_USE_EXTERNAL_MODULES=verl_omni
 
-MODEL_PATH=${MODEL_PATH:-"$HOME/models/Qwen/Qwen3-Omni-30B-A3B-Instruct"}
-TRAIN_FILE=${TRAIN_FILE:-"$HOME/data/mmk12/train.parquet"}
-VAL_FILE=${VAL_FILE:-"$HOME/data/mmk12/test.parquet"}
+# Set WORKSPACE to any writable directory; defaults to $HOME
+WORKSPACE=${WORKSPACE:-$HOME}
+
+MODEL_PATH=${MODEL_PATH:-"$WORKSPACE/models/Qwen/Qwen3-Omni-30B-A3B-Instruct"}
+TRAIN_FILE=${TRAIN_FILE:-"$WORKSPACE/data/mmk12/train.parquet"}
+VAL_FILE=${VAL_FILE:-"$WORKSPACE/data/mmk12/test.parquet"}
 
 python3 -m verl_omni.trainer.main_omni \
     data.train_files="${TRAIN_FILE}" \
