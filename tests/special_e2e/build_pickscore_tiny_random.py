@@ -34,7 +34,6 @@ from tokenizers.pre_tokenizers import ByteLevel as ByteLevelPreTokenizer
 from tokenizers.trainers import BpeTrainer
 from transformers import CLIPConfig, CLIPImageProcessor, CLIPModel, PreTrainedTokenizerFast
 
-
 DEFAULT_OUTPUT_DIR = os.path.expanduser("~/models/tiny-random/PickScore")
 
 _CLIP_VOCAB_WORDS = (

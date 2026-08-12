@@ -50,9 +50,7 @@ class _TinyPickScoreInferencer:
             return_tensors="pt",
         )
         text_inputs = {
-            key: value.to(self.device)
-            for key, value in text_inputs.items()
-            if key in ("input_ids", "attention_mask")
+            key: value.to(self.device) for key, value in text_inputs.items() if key in ("input_ids", "attention_mask")
         }
 
         image_embeds = _pickscore._feature_tensor(self.model.get_image_features(**image_inputs))
