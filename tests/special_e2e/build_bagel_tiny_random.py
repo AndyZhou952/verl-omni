@@ -172,6 +172,21 @@ def _build_vit_state_dict(vit_config: dict) -> dict[str, torch.Tensor]:
     return {f"vit_model.{name}": tensor.detach().contiguous() for name, tensor in vit.state_dict().items()}
 
 
+def _build_bagel_und_state_dict(
+    *, hidden_size: int, vit_hidden_size: int, vit_max_num_patch_per_side: int
+) -> dict[str, torch.Tensor]:
+    """Random weights for modules ``Bagel`` always builds (connector, vit_pos_embed),
+    independent of the ``visual_und`` config flag."""
+    fc1, fc2 = torch.nn.Linear(vit_hidden_size, hidden_size), torch.nn.Linear(hidden_size, hidden_size)
+    return {
+        "connector.fc1.weight": fc1.weight.detach().contiguous(),
+        "connector.fc1.bias": fc1.bias.detach().contiguous(),
+        "connector.fc2.weight": fc2.weight.detach().contiguous(),
+        "connector.fc2.bias": fc2.bias.detach().contiguous(),
+        "vit_pos_embed.pos_embed": torch.randn(vit_max_num_patch_per_side**2, hidden_size),
+    }
+
+
 def ensure_tiny_bagel_checkpoint(
     output_dir: str,
     *,
@@ -200,17 +215,21 @@ def ensure_tiny_bagel_checkpoint(
 
     llm_config = _tiny_llm_config(vocab_size, bos_token_id=bos_id, eos_token_id=eos_id)
     vit_config = _tiny_vit_config()
+    vit_max_num_patch_per_side = 16
     root_config = {
         "architectures": ["BagelForConditionalGeneration"],
         "model_type": "bagel",
         "visual_gen": True,
-        "visual_und": False,  # no ViT/connector weights in this generation-only checkpoint
+        # BagelPipeline's DiT stage builds its own BagelConfig without reading this
+        # key, so it always constructs vit_model/connector/vit_pos_embed regardless;
+        # False only spares the AR (OmniBagelForConditionalGeneration) stage.
+        "visual_und": False,
         "llm_config": llm_config,
         "vit_config": {**vit_config, "num_channels": 3},
         "vae_config": {"z_channels": 16, "downsample": 8},
         "latent_patch_size": 2,
         "max_latent_size": 32,
-        "vit_max_num_patch_per_side": 16,
+        "vit_max_num_patch_per_side": vit_max_num_patch_per_side,
         "connector_act": "gelu_pytorch_tanh",
         "interpolate_pos": False,
         "timestep_shift": 1.0,
@@ -276,8 +295,19 @@ def ensure_tiny_bagel_checkpoint(
         end_of_image_id=eoi_id,
     )
     model = BagelForTraining(train_config)
-    ema_state_dict = _training_state_to_ema(model.state_dict())
+    training_state_dict = model.state_dict()
+    ema_state_dict = _training_state_to_ema(training_state_dict)
     ema_state_dict.update(_build_vit_state_dict(vit_config))
+    ema_state_dict.update(
+        _build_bagel_und_state_dict(
+            hidden_size=llm_config["hidden_size"],
+            vit_hidden_size=vit_config["hidden_size"],
+            vit_max_num_patch_per_side=vit_max_num_patch_per_side,
+        )
+    )
+    # BagelPipeline's DiT-stage Qwen2MoTForCausalLM always allocates a separate,
+    # untied lm_head; reuse embed_tokens so it at least has the right shape.
+    ema_state_dict["language_model.lm_head.weight"] = training_state_dict["embed_tokens.weight"].detach().contiguous()
     save_file(ema_state_dict, os.path.join(output_dir, "ema.safetensors"))
     save_file(_build_ae_state_dict(), os.path.join(output_dir, "ae.safetensors"))
     return output_dir
