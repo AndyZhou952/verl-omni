@@ -307,7 +307,9 @@ def ensure_tiny_bagel_checkpoint(
     )
     # BagelPipeline's DiT-stage Qwen2MoTForCausalLM always allocates a separate,
     # untied lm_head; reuse embed_tokens so it at least has the right shape.
-    ema_state_dict["language_model.lm_head.weight"] = training_state_dict["embed_tokens.weight"].detach().contiguous()
+    ema_state_dict["language_model.lm_head.weight"] = (
+        training_state_dict["embed_tokens.weight"].detach().clone().contiguous()
+    )
     save_file(ema_state_dict, os.path.join(output_dir, "ema.safetensors"))
     save_file(_build_ae_state_dict(), os.path.join(output_dir, "ae.safetensors"))
     return output_dir
