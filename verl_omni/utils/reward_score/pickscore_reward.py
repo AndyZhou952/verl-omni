@@ -19,14 +19,13 @@ import os
 import numpy as np
 import torch
 from PIL import Image
-from transformers import AutoTokenizer, CLIPImageProcessor, CLIPModel
+from transformers import CLIPModel, CLIPProcessor
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "INFO"))
 
-# Override for offline smoke tests (tiny-random CLIP checkpoints).
-_PROCESSOR_PATH = os.getenv("PICKSCORE_PROCESSOR_PATH", "laion/CLIP-ViT-H-14-laion2B-s32B-b79K")
-_MODEL_PATH = os.getenv("PICKSCORE_MODEL_PATH", "yuvalkirstain/PickScore_v1")
+_PROCESSOR_PATH = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
+_MODEL_PATH = "yuvalkirstain/PickScore_v1"
 _MAX_BATCH_SIZE = 16
 
 _inferencer = None
@@ -50,13 +49,10 @@ def _feature_tensor(features):
 
 class _PickScoreInferencer:
     def __init__(self, device: str = "cuda", dtype=torch.float32):
-        logger.info("Creating PickScore model from %s (processor=%s)", _MODEL_PATH, _PROCESSOR_PATH)
+        logger.info("Creating PickScore model from %s", _MODEL_PATH)
         self.device = device
         self.dtype = dtype
-        # Load image processor + tokenizer separately so offline tiny checkpoints
-        # can ship a generic fast tokenizer (CLIPProcessor requires CLIPTokenizer*).
-        self.image_processor = CLIPImageProcessor.from_pretrained(_PROCESSOR_PATH)
-        self.tokenizer = AutoTokenizer.from_pretrained(_PROCESSOR_PATH)
+        self.processor = CLIPProcessor.from_pretrained(_PROCESSOR_PATH)
         self.model = CLIPModel.from_pretrained(_MODEL_PATH).eval().to(device)
         self.model = self.model.to(dtype=dtype)
 
@@ -66,22 +62,23 @@ class _PickScoreInferencer:
         prompt_to_index = {prompt: index for index, prompt in enumerate(unique_prompts)}
         prompt_indices = [prompt_to_index[prompt] for prompt in prompts]
 
-        image_inputs = self.image_processor(images=images, return_tensors="pt")
+        image_inputs = self.processor(
+            images=images,
+            padding=True,
+            truncation=True,
+            max_length=77,
+            return_tensors="pt",
+        )
         image_inputs = {k: v.to(device=self.device) for k, v in image_inputs.items()}
 
-        text_inputs = self.tokenizer(
+        text_inputs = self.processor(
             text=unique_prompts,
             padding=True,
             truncation=True,
             max_length=77,
             return_tensors="pt",
         )
-        # Generic fast tokenizers may emit token_type_ids; CLIPModel rejects them.
-        text_inputs = {
-            k: v.to(device=self.device)
-            for k, v in text_inputs.items()
-            if k in ("input_ids", "attention_mask")
-        }
+        text_inputs = {k: v.to(device=self.device) for k, v in text_inputs.items()}
 
         image_embs = _feature_tensor(self.model.get_image_features(**image_inputs))
         image_embs = image_embs / image_embs.norm(p=2, dim=-1, keepdim=True)

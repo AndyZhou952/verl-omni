@@ -79,8 +79,7 @@ python3 tests/special_e2e/create_dummy_bagel_pickscore_data.py \
     --max_prompt_length "${max_prompt_length}"
 
 export RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO=0
-export PICKSCORE_MODEL_PATH="${PICKSCORE_PATH}"
-export PICKSCORE_PROCESSOR_PATH="${PICKSCORE_PATH}"
+export PICKSCORE_PATH
 
 start_leak_monitor
 python3 -m verl_omni.trainer.main_diffusion \
@@ -131,7 +130,7 @@ python3 -m verl_omni.trainer.main_diffusion \
     +actor_rollout_ref.rollout.engine_kwargs.vllm_omni.deploy_config=${BAGEL_DEPLOY_CONFIG} \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=${micro_bsz_per_gpu} \
     reward.num_workers=1 \
-    reward.custom_reward_function.path=verl_omni/utils/reward_score/pickscore_reward.py \
+    reward.custom_reward_function.path=tests/special_e2e/bagel_pickscore_reward.py \
     reward.custom_reward_function.name=compute_score_pickscore \
     trainer.logger=console \
     trainer.project_name=verl-test \
