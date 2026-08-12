@@ -65,5 +65,10 @@ class _TinyPickScoreInferencer:
         return scores.diag() / 26
 
 
+assert hasattr(_pickscore, "_PickScoreInferencer"), (
+    "verl_omni.utils.reward_score.pickscore_reward._PickScoreInferencer not found; "
+    "this smoke test's patch point is stale and would silently fall back to the real "
+    "(network-downloaded) PickScore model."
+)
 _pickscore._PickScoreInferencer = _TinyPickScoreInferencer
 compute_score_pickscore = _pickscore.compute_score_pickscore

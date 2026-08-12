@@ -109,6 +109,10 @@ class BagelTrainingConfig:
             max_latent_size=root_cfg.get("max_latent_size", 32),
             latent_channel=vae.get("z_channels", 16),
             vae_downsample=vae.get("downsample", 8),
+            # Tiny/offline checkpoints may use a small tokenizer vocab; prefer
+            # explicit IDs from config.json when present (product BAGEL keeps defaults).
+            start_of_image_id=int(root_cfg.get("start_of_image_id", 151652)),
+            end_of_image_id=int(root_cfg.get("end_of_image_id", 151653)),
         )
 
 

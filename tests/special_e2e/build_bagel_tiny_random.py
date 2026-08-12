@@ -185,10 +185,7 @@ def ensure_tiny_bagel_checkpoint(
     soi_id = int(tokenizer.convert_tokens_to_ids("<|vision_start|>"))
     eoi_id = int(tokenizer.convert_tokens_to_ids("<|vision_end|>"))
     pad_id = int(tokenizer.convert_tokens_to_ids("<|endoftext|>"))
-    # BagelForTraining intentionally uses the published BAGEL boundary IDs
-    # (151652/151653). Keep the tiny hidden size/layer count, but retain enough
-    # embedding rows for those IDs so production loading code needs no test hook.
-    vocab_size = max(152064, int(len(tokenizer)), soi_id + 1, eoi_id + 1)
+    vocab_size = max(int(len(tokenizer)), soi_id + 1, eoi_id + 1)
 
     llm_config = _tiny_llm_config(vocab_size, bos_token_id=bos_id, eos_token_id=eos_id)
     vit_config = _tiny_vit_config()
@@ -264,6 +261,8 @@ def ensure_tiny_bagel_checkpoint(
         max_latent_size=32,
         latent_channel=16,
         vae_downsample=8,
+        start_of_image_id=soi_id,
+        end_of_image_id=eoi_id,
     )
     model = BagelForTraining(train_config)
     save_file(_training_state_to_ema(model.state_dict()), os.path.join(output_dir, "ema.safetensors"))
