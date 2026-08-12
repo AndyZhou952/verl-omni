@@ -1110,6 +1110,11 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
             await sender.async_send_weights(lora_weights.items())
             if future is not None:
                 await future
+            # Mirror ServerAdapter.update_weights: reset caches and stamp the weight version.
+            if self.rollout.rollout_rank == 0 and self.rollout._ensure_server_handle():
+                await self.rollout.server_handle.clear_kv_cache.remote()
+                if global_steps is not None:
+                    await self.rollout.server_handle.set_global_steps.remote(global_steps)
             timings["update_weights_sync"] = time.perf_counter() - sync_start
             offloaded = True
         else:
