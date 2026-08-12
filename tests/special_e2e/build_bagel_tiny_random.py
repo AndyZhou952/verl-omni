@@ -21,9 +21,8 @@ verl-omni ``BagelForTraining.from_pretrained`` can both load it:
   ae.safetensors    (AutoEncoder matching vllm-omni ``default_ae_params``)
   tokenizer files + Siglip preprocessor_config.json
 
-``BagelPipeline`` unconditionally builds a ``vit_model`` (SiglipVisionModel) even
-when ``visual_und=False``, so ``ema.safetensors`` must carry ``vit_model.*``
-weights too, or vLLM's strict ``AutoWeightsLoader`` fails checkpoint loading.
+``BagelPipeline`` builds ``vit_model`` unconditionally, even when ``visual_und=False``,
+so ``ema.safetensors`` must carry ``vit_model.*`` weights too.
 
 The LLM/ViT stacks are shrunk; the VAE keeps the product geometry because
 vllm-omni always constructs ``AutoEncoder(default_ae_params())``.
@@ -168,11 +167,8 @@ def _build_ae_state_dict() -> dict[str, torch.Tensor]:
 def _build_vit_state_dict(vit_config: dict) -> dict[str, torch.Tensor]:
     """Random SiglipVisionModel weights, keyed like ``SiglipNaViTWrapper`` expects.
 
-    ``SiglipNaViTWrapper`` unwraps ``SiglipVisionModel.vision_model`` when present
-    (older transformers) or wraps the flat model as-is (newer transformers, which
-    dropped that inner submodule) -- either way its own state_dict keys end up
-    under a single ``vision_model.`` level. Mirror that here instead of assuming
-    one transformers layout.
+    Mirrors its ``hasattr(vision_model, "vision_model")`` unwrap so keys land under
+    one ``vision_model.`` level regardless of transformers version.
     """
     config = SiglipVisionConfig(**vit_config, vision_use_head=False)
     vit = SiglipVisionModel(config)
@@ -185,8 +181,7 @@ def _build_vit_state_dict(vit_config: dict) -> dict[str, torch.Tensor]:
 def _build_bagel_und_state_dict(
     *, hidden_size: int, vit_hidden_size: int, vit_max_num_patch_per_side: int
 ) -> dict[str, torch.Tensor]:
-    """Random weights for modules ``Bagel`` always builds (connector, vit_pos_embed),
-    independent of the ``visual_und`` config flag."""
+    """Random connector/vit_pos_embed weights; ``Bagel`` always builds these regardless of ``visual_und``."""
     fc1, fc2 = torch.nn.Linear(vit_hidden_size, hidden_size), torch.nn.Linear(hidden_size, hidden_size)
     return {
         "connector.fc1.weight": fc1.weight.detach().contiguous(),
@@ -230,10 +225,7 @@ def ensure_tiny_bagel_checkpoint(
         "architectures": ["BagelForConditionalGeneration"],
         "model_type": "bagel",
         "visual_gen": True,
-        # BagelPipeline's DiT stage builds its own BagelConfig without reading this
-        # key, so it always constructs vit_model/connector/vit_pos_embed regardless;
-        # False only spares the AR (OmniBagelForConditionalGeneration) stage.
-        "visual_und": False,
+        "visual_und": False,  # spares only the AR stage; DiT always builds vit_model/connector/vit_pos_embed
         "llm_config": llm_config,
         "vit_config": {**vit_config, "num_channels": 3},
         "vae_config": {"z_channels": 16, "downsample": 8},
@@ -315,8 +307,7 @@ def ensure_tiny_bagel_checkpoint(
             vit_max_num_patch_per_side=vit_max_num_patch_per_side,
         )
     )
-    # BagelPipeline's DiT-stage Qwen2MoTForCausalLM always allocates a separate,
-    # untied lm_head; reuse embed_tokens so it at least has the right shape.
+    # Qwen2MoTForCausalLM always allocates an untied lm_head; reuse embed_tokens for shape.
     ema_state_dict["language_model.lm_head.weight"] = (
         training_state_dict["embed_tokens.weight"].detach().clone().contiguous()
     )
