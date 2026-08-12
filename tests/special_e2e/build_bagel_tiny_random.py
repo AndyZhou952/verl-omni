@@ -32,11 +32,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import os
-import sys
-from pathlib import Path
 
 import torch
 from safetensors.torch import save_file
@@ -46,52 +43,11 @@ from tokenizers.models import BPE
 from tokenizers.pre_tokenizers import ByteLevel as ByteLevelPreTokenizer
 from tokenizers.trainers import BpeTrainer
 from transformers import Qwen2TokenizerFast
+from vllm_omni.diffusion.models.bagel.autoencoder import AutoEncoder, AutoEncoderParams
+
+from verl_omni.pipelines.bagel_flow_grpo.bagel_model import BagelForTraining, BagelTrainingConfig
 
 DEFAULT_OUTPUT_DIR = os.path.expanduser("~/models/tiny-random/BAGEL-MoT")
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-
-
-def _load_module(module_name: str, path: Path):
-    spec = importlib.util.spec_from_file_location(module_name, path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot load {module_name} from {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-def _load_bagel_training_classes():
-    """Load BagelForTraining without importing ``verl_omni.pipelines`` package init."""
-    import types
-
-    for pkg in (
-        "verl_omni",
-        "verl_omni.pipelines",
-        "verl_omni.pipelines.bagel_flow_grpo",
-    ):
-        if pkg not in sys.modules:
-            sys.modules[pkg] = types.ModuleType(pkg)
-
-    _load_module(
-        "verl_omni.pipelines.non_diffusers_model_base",
-        _REPO_ROOT / "verl_omni/pipelines/non_diffusers_model_base.py",
-    )
-    bagel_model = _load_module(
-        "verl_omni.pipelines.bagel_flow_grpo.bagel_model",
-        _REPO_ROOT / "verl_omni/pipelines/bagel_flow_grpo/bagel_model.py",
-    )
-    return bagel_model.BagelForTraining, bagel_model.BagelTrainingConfig
-
-
-def _load_autoencoder_classes():
-    try:
-        from vllm_omni.diffusion.models.bagel.autoencoder import AutoEncoder, AutoEncoderParams
-
-        return AutoEncoder, AutoEncoderParams
-    except ImportError:  # pragma: no cover - offline/dev machines without vllm-omni
-        mod = _load_module("_bagel_autoencoder", Path(__file__).with_name("_bagel_autoencoder.py"))
-        return mod.AutoEncoder, mod.AutoEncoderParams
 
 _CHATML_TEMPLATE = (
     "{% for message in messages %}"
@@ -188,8 +144,6 @@ def _training_state_to_ema(state_dict: dict[str, torch.Tensor]) -> dict[str, tor
 
 def _build_ae_state_dict() -> dict[str, torch.Tensor]:
     """Random AE weights matching vllm-omni ``default_ae_params()`` geometry."""
-    AutoEncoder, AutoEncoderParams = _load_autoencoder_classes()
-
     # Keep in sync with vllm_omni.diffusion.models.bagel.pipeline_bagel.default_ae_params.
     params = AutoEncoderParams(
         resolution=256,
@@ -215,8 +169,6 @@ def ensure_tiny_bagel_checkpoint(
     skip_if_exists: bool = True,
 ) -> str:
     """Build and save a tiny BAGEL checkpoint if it does not already exist."""
-    BagelForTraining, BagelTrainingConfig = _load_bagel_training_classes()
-
     output_dir = os.path.expanduser(output_dir)
     marker = os.path.join(output_dir, "ema.safetensors")
     if skip_if_exists and os.path.isfile(marker) and os.path.isfile(os.path.join(output_dir, "config.json")):
