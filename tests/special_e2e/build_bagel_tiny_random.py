@@ -17,9 +17,13 @@ Layout mirrors ``ByteDance-Seed/BAGEL-7B-MoT`` so vllm-omni ``BagelPipeline`` an
 verl-omni ``BagelForTraining.from_pretrained`` can both load it:
 
   config.json / llm_config.json / vit_config.json
-  ema.safetensors   (MoT language model + gen projections)
+  ema.safetensors   (MoT language model + gen projections + ViT tower)
   ae.safetensors    (AutoEncoder matching vllm-omni ``default_ae_params``)
   tokenizer files + Siglip preprocessor_config.json
+
+``BagelPipeline`` unconditionally builds a ``vit_model`` (SiglipVisionModel) even
+when ``visual_und=False``, so ``ema.safetensors`` must carry ``vit_model.*``
+weights too, or vLLM's strict ``AutoWeightsLoader`` fails checkpoint loading.
 
 The LLM/ViT stacks are shrunk; the VAE keeps the product geometry because
 vllm-omni always constructs ``AutoEncoder(default_ae_params())``.
@@ -42,7 +46,7 @@ from tokenizers.decoders import ByteLevel as ByteLevelDecoder
 from tokenizers.models import BPE
 from tokenizers.pre_tokenizers import ByteLevel as ByteLevelPreTokenizer
 from tokenizers.trainers import BpeTrainer
-from transformers import Qwen2TokenizerFast
+from transformers import Qwen2TokenizerFast, SiglipVisionConfig, SiglipVisionModel
 from vllm_omni.diffusion.models.bagel.autoencoder import AutoEncoder, AutoEncoderParams
 
 from verl_omni.pipelines.bagel_flow_grpo.bagel_model import BagelForTraining, BagelTrainingConfig
@@ -110,7 +114,7 @@ def _tiny_llm_config(vocab_size: int, *, bos_token_id: int, eos_token_id: int) -
         "rms_norm_eps": 1e-6,
         "rope_theta": 1000000.0,
         "sliding_window": 4096,
-        "tie_word_embeddings": False,
+        "tie_word_embeddings": True,  # BagelForTraining has no separate lm_head to checkpoint
         "torch_dtype": "bfloat16",
         "use_cache": True,
         "use_sliding_window": False,
@@ -161,6 +165,13 @@ def _build_ae_state_dict() -> dict[str, torch.Tensor]:
     return {name: tensor.detach().contiguous() for name, tensor in ae.state_dict().items()}
 
 
+def _build_vit_state_dict(vit_config: dict) -> dict[str, torch.Tensor]:
+    """Random SiglipVisionModel weights, keyed under ``vit_model.`` like the published checkpoint."""
+    config = SiglipVisionConfig(**vit_config, vision_use_head=False)
+    vit = SiglipVisionModel(config)
+    return {f"vit_model.{name}": tensor.detach().contiguous() for name, tensor in vit.state_dict().items()}
+
+
 def ensure_tiny_bagel_checkpoint(
     output_dir: str,
     *,
@@ -193,7 +204,7 @@ def ensure_tiny_bagel_checkpoint(
         "architectures": ["BagelForConditionalGeneration"],
         "model_type": "bagel",
         "visual_gen": True,
-        "visual_und": True,
+        "visual_und": False,  # no ViT/connector weights in this generation-only checkpoint
         "llm_config": llm_config,
         "vit_config": {**vit_config, "num_channels": 3},
         "vae_config": {"z_channels": 16, "downsample": 8},
@@ -265,7 +276,9 @@ def ensure_tiny_bagel_checkpoint(
         end_of_image_id=eoi_id,
     )
     model = BagelForTraining(train_config)
-    save_file(_training_state_to_ema(model.state_dict()), os.path.join(output_dir, "ema.safetensors"))
+    ema_state_dict = _training_state_to_ema(model.state_dict())
+    ema_state_dict.update(_build_vit_state_dict(vit_config))
+    save_file(ema_state_dict, os.path.join(output_dir, "ema.safetensors"))
     save_file(_build_ae_state_dict(), os.path.join(output_dir, "ae.safetensors"))
     return output_dir
 
