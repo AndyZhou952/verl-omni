@@ -80,6 +80,7 @@ python3 tests/special_e2e/create_dummy_bagel_pickscore_data.py \
 
 export RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO=0
 export PICKSCORE_PATH
+export DIFFUSION_ATTENTION_BACKEND=${ROLLOUT_ATTN_BACKEND}
 
 start_leak_monitor
 python3 -m verl_omni.trainer.main_diffusion \
@@ -95,7 +96,6 @@ python3 -m verl_omni.trainer.main_diffusion \
     +actor_rollout_ref.model.architecture=OmniBagelForConditionalGeneration \
     actor_rollout_ref.model.trust_remote_code=True \
     actor_rollout_ref.model.attn_backend=${ATTN_BACKEND} \
-    actor_rollout_ref.rollout.rollout_attn_backend=${ROLLOUT_ATTN_BACKEND} \
     actor_rollout_ref.model.lora_rank=8 \
     actor_rollout_ref.model.lora_alpha=16 \
     actor_rollout_ref.model.lora_dtype=float32 \
