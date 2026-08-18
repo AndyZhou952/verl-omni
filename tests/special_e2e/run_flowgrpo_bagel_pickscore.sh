@@ -80,7 +80,6 @@ python3 tests/special_e2e/create_dummy_bagel_pickscore_data.py \
 
 export RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO=0
 export PICKSCORE_PATH
-export DIFFUSION_ATTENTION_BACKEND=${ROLLOUT_ATTN_BACKEND}
 
 start_leak_monitor
 python3 -m verl_omni.trainer.main_diffusion \
@@ -112,6 +111,7 @@ python3 -m verl_omni.trainer.main_diffusion \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=${micro_bsz_per_gpu} \
     actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
     actor_rollout_ref.rollout.name=${ENGINE} \
+    actor_rollout_ref.rollout.rollout_attn_backend=${ROLLOUT_ATTN_BACKEND} \
     actor_rollout_ref.rollout.n=${n_resp_per_prompt} \
     actor_rollout_ref.rollout.agent.num_workers=1 \
     actor_rollout_ref.rollout.load_format=safetensors \
