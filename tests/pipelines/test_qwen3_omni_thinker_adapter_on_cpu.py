@@ -412,9 +412,20 @@ def test_thinker_class_no_split_modules_is_correct():
         Qwen3OmniMoeThinkerForConditionalGeneration,
     )
 
-    expected = {"Qwen3OmniMoeAudioEncoder", "Qwen3OmniMoeVisionEncoder"}
-    actual = set(Qwen3OmniMoeThinkerForConditionalGeneration._no_split_modules)
-    assert expected <= actual, f"_no_split_modules should include {expected} in transformers >= 5.0, got {actual}"
+    required = {
+        "Qwen3OmniMoeAudioEncoder",
+        "Qwen3OmniMoeVisionEncoder",
+    }
+    optional = {"Qwen3OmniMoeThinkerTextDecoderLayer"}
+    actual = Qwen3OmniMoeThinkerForConditionalGeneration._no_split_modules
+    actual_set = set(actual)
+    assert required.issubset(actual_set), (
+        f"_no_split_modules should include {sorted(required)} in transformers >= 5.0, got {actual}"
+    )
+    unexpected = actual_set - required - optional
+    assert not unexpected, (
+        f"_no_split_modules has unexpected entries {sorted(unexpected)} in transformers >= 5.0, got {actual}"
+    )
 
 
 def test_peft_wrapped_model_forwards():
