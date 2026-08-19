@@ -52,7 +52,6 @@ from vllm_omni.lora.request import LoRARequest
 from vllm_omni.outputs import OmniRequestOutput
 
 from verl_omni.pipelines.model_base import OmniRolloutPipelineBase, VllmOmniPipelineBase
-from verl_omni.utils.diffusion_attention import apply_rollout_attention_backend
 from verl_omni.workers.config import DiffusionModelConfig, DiffusionRolloutConfig, OmniModelConfig
 from verl_omni.workers.rollout.replica import DiffusionOutput
 
@@ -324,7 +323,8 @@ class vLLMOmniHttpServer(vLLMHttpServer):
         # rollout_attn_backend only exists on the diffusion rollout config, not AR text rollouts.
         attn_backend = getattr(self.config, "rollout_attn_backend", None)
         if attn_backend is not None:
-            apply_rollout_attention_backend(engine_args, attn_backend)
+            engine_args.pop("diffusion_attention_backend", None)
+            engine_args["diffusion_attention_config"] = self.config.to_vllm_omni_attention_config()
             logger.info(
                 "Setting diffusion_attention_config.default.backend=%s from rollout config",
                 attn_backend,

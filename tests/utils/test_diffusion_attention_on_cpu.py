@@ -17,23 +17,14 @@ import logging
 from omegaconf import OmegaConf
 
 from tests.utils.smoke_attention import resolve_smoke_attention_backends
-from verl_omni.utils.diffusion_attention import (
-    apply_rollout_attention_backend,
-    fallback_fa3_if_unavailable,
-    validate_attention_consistency,
-)
+from verl_omni.utils.diffusion_attention import fallback_fa3_if_unavailable, validate_attention_consistency
+from verl_omni.workers.config.diffusion import DiffusionRolloutConfig
 
 
-def test_apply_rollout_attention_backend_uses_only_structured_config():
-    engine_args = {
-        "diffusion_attention_backend": "TORCH_SDPA",
-        "diffusion_attention_config": None,
-    }
+def test_rollout_config_builds_structured_vllm_omni_attention_config():
+    config = DiffusionRolloutConfig(name="vllm_omni", rollout_attn_backend="FLASH_ATTN")
 
-    apply_rollout_attention_backend(engine_args, "FLASH_ATTN")
-
-    assert "diffusion_attention_backend" not in engine_args
-    assert engine_args["diffusion_attention_config"] == {"default": {"backend": "FLASH_ATTN"}}
+    assert config.to_vllm_omni_attention_config() == {"default": {"backend": "FLASH_ATTN"}}
 
 
 def test_veomni_strategy_skips_with_warning(caplog):
