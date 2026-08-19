@@ -30,6 +30,15 @@ FA3_ROLLOUT_BACKENDS = ("FLASH_ATTN", "FLASH_ATTN_HUB", "FLASH_ATTN_3_HUB")
 KERNELS_HUB_ROLLOUT_BACKENDS = ("FLASH_ATTN_HUB", "FLASH_ATTN_3_HUB")
 
 
+def apply_rollout_attention_backend(engine_args: dict[str, Any], rollout_backend: str | None) -> None:
+    """Forward the rollout backend using vLLM-Omni's canonical config form."""
+    if rollout_backend is None:
+        return
+
+    engine_args.pop("diffusion_attention_backend", None)
+    engine_args["diffusion_attention_config"] = {"default": {"backend": rollout_backend}}
+
+
 def actor_fa3_available() -> bool:
     return importlib.util.find_spec("kernels") is not None
 
