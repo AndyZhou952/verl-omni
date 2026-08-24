@@ -40,6 +40,7 @@ thing, the guide wins and the file links to it.
 | Skill                                                | Use for                                                        |
 | ---------------------------------------------------- | -------------------------------------------------------------- |
 | [commit-and-pr](skills/commit-and-pr/SKILL.md)       | commit trailers, `[{modules}] {type}:` titles, duplicate-work checks, AI-assistance disclosure |
+| [explore-repo](skills/explore-repo/SKILL.md)         | routing to [`docs/contributing/code_map.md`](../docs/contributing/code_map.md) |
 | [add-pipeline](skills/add-pipeline/SKILL.md)         | routing a model / algorithm integration to the right guide under `docs/contributing/` |
 | [add-reward-score](skills/add-reward-score/SKILL.md) | a new reward scorer plus the config overrides that select it    |
 | [run-cpu-tests](skills/run-cpu-tests/SKILL.md)       | what the CPU job does that `testing_guide.md`'s local commands don't |

@@ -117,6 +117,7 @@ api/utils.rst
 :caption: Developer Guide
 
 contributing/editing-agent-instructions.md
+contributing/code_map.md
 contributing/ci_cd.md
 contributing/testing_guide.md
 contributing/integrating_an_omni_model.md

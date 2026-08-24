@@ -88,6 +88,7 @@ pairs or online DiffusionNFT-style forward-process training), follow:
 
 Additional guides:
 
+- [Code Map](docs/contributing/code_map.md)
 - [How to Integrate an Image-to-Image Diffusion Model](docs/contributing/integrating_an_i2i_diffusion_model.md)
 - [How to Integrate a Non-Diffusers Model for FlowGRPO Training](docs/contributing/integrating_a_non_diffusers_model.md)
 - [How to Add a New Omni Model](docs/contributing/integrating_an_omni_model.md)
