@@ -1,6 +1,6 @@
 # Installation
 
-Last updated: 08/15/2026
+Last updated: 08/31/2026
 
 ## Requirements
 
@@ -13,6 +13,12 @@ For Ascend NPU:
 
 * **Python**: Version >= 3.10
 * **CANN**: Version >= 8.5.0
+
+### Validated dependency versions
+
+* **Transformers**: `>=5.10.1,<=5.14.1` (matches the vLLM-Omni window; do not install 5.15+).
+  Qwen3-Omni GPU smoke is proven at `5.12.1`; recipes document `5.13.1`; nightly pins `5.14.1`.
+  Lifting the 5.14.1 cap needs Qwen3-Omni FSDP metadata work (upstream issue #445 A13).
 
 ## Install
 

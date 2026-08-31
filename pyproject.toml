@@ -36,9 +36,9 @@ dependencies = [
     "safetensors>=0.4.5",
     "tensordict>=0.8.0,<=0.10.0,!=0.9.0",
     "torchdata",
-    # TODO: Remove this cap after the Qwen3-Omni adapter and tests support the
-    # FSDP `_no_split_modules` metadata change introduced in Transformers 5.15.0.
-    "transformers<=5.14.1",
+    # Floor matches vllm-omni (>=5.10.1). Cap stays at 5.14.1 until Qwen3-Omni
+    # adapter/tests absorb the Transformers 5.15 FSDP metadata change (issue #445 A13).
+    "transformers>=5.10.1,<=5.14.1",
     "wandb",
     "packaging>=20.0",
     "uvicorn",
