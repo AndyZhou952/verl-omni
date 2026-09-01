@@ -200,7 +200,20 @@ not only a defect list. Then produce the verdict-first report:
    hunks to split out, placement issues.
 5. **Verified safe** notes.
 6. **"What I would suggest the author do"** — numbered, priority-ordered, executable
-   top-to-bottom, including exact missing test parameterizations and PR-description gaps.
+   top-to-bottom, including exact missing test parameterizations. Every item is tagged
+   with where it belongs and ends in a concrete artifact, never a bare exhortation:
+   - **this PR** — name the file/line/function and the shape of the change (a call to
+     add, a guard, a log line, a test parameterization). A PR-description update is only
+     a valid action *on its own* when paired with a code-level artifact where one exists
+     (a `# TODO` comment, a default change) — reserve prose-only asks ("mention this in
+     the description") for gaps genuinely blocked on a capability that doesn't exist
+     anywhere in the stack yet; if a code-level fix is possible, lead with that instead.
+   - **follow-up PR (this repo)** — state why it's out of scope here and the rough shape
+     of that PR.
+   - **upstream (name the project — verl / vllm-omni / diffusers / other)** — name the
+     exact upstream function/gap, whether it blocks this PR or can ship behind a
+     `# TODO (<owner>): drop when <condition>. Ref: <upstream issue/PR>`, and who's
+     expected to file it (default: the author).
 7. **Approval-gate verdict** — would this merge under the repo standard? List each unmet
    gate item: real problem stated; e2e curve/evidence for training-affecting changes;
    CI green (verified); single-purpose diff; no patches without TODO+upstream ref; no
@@ -213,9 +226,14 @@ is not verified.
 
 - **Default (report)**: the structured report above, in conversation or a file.
 - **Inline mode** (only when explicitly asked to draft/post GitHub comments): terse house
-  style — one issue per comment; severity by grammatical mood (bare imperative = blocker,
-  short question = probe, "better to"/"how about" = suggestion, "maybe in next PR" =
-  deferrable); ```suggestion blocks for small fixes; "same" for repeats; polite particles
-  ("pls", "thx", "~"), never paragraphs; concede immediately when the author's evidence
-  holds. Label any AI-assisted full review "First-pass — not an approval." Never post to
-  GitHub without the user's explicit request.
+  style — one issue per comment, headline first: a ~20-word line stating what breaks and
+  why it matters, then 2-4 short bullets carrying the mechanism (never one dense
+  paragraph — a reviewer should get the point before the walkthrough). Severity by
+  grammatical mood (bare imperative = blocker, short question = probe, "better to"/"how
+  about" = suggestion, "maybe in next PR" = deferrable); ```suggestion blocks for small
+  fixes; "same" for repeats; polite particles ("pls", "thx", "~"), never paragraphs;
+  concede immediately when the author's evidence holds. Every comment closes on one
+  concrete action tagged this PR / follow-up PR / upstream(<project>) per Step 4 item 6 —
+  never close on a bare "please flag this" with nothing to actually add or file. Label any
+  AI-assisted full review "First-pass — not an approval." Never post to GitHub without the
+  user's explicit request.
