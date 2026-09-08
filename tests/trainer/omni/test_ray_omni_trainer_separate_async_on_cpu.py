@@ -28,7 +28,8 @@ _CONFIG_DIR = str((Path(__file__).parents[3] / "verl_omni" / "trainer" / "config
 
 _BASE_OVERRIDES = [
     "trainer.v1.trainer_mode=omni_separate_async",
-    "data.train_batch_size=4",
+    # Parent asserts train_batch_size == parameter_sync_step * ppo_mini_batch_size.
+    "data.train_batch_size=16",
     "actor_rollout_ref.actor.ppo_mini_batch_size=4",
     "actor_rollout_ref.rollout.nnodes=1",
     "actor_rollout_ref.rollout.n_gpus_per_node=2",
@@ -49,16 +50,20 @@ def test_registered_and_subclasses_separate_async():
 
 def test_parameter_sync_step_follows_validated_key():
     # PPOTrainer.__init__ reads v1.omni_separate_async.parameter_sync_step (absent
-    # -> 1); the parent gates syncs on v1.separate_async. Both the trainer AND the
-    # ReplayBuffer (which normalizes staleness by this knob) must report the
-    # cadence the parent actually runs.
+    # -> 1); the parent gates syncs on v1.separate_async. The trainer must report
+    # the cadence the parent actually runs. ReplayBuffer does not read this knob.
     trainer = OmniPPOTrainerSeparateAsync(_compose_config())
     assert trainer.parameter_sync_step == 4  # upstream separate_async default
-    assert trainer.replay_buffer.parameter_sync_step == 4
 
-    trainer = OmniPPOTrainerSeparateAsync(_compose_config(["trainer.v1.separate_async.parameter_sync_step=2"]))
+    trainer = OmniPPOTrainerSeparateAsync(
+        _compose_config(
+            [
+                "trainer.v1.separate_async.parameter_sync_step=2",
+                "data.train_batch_size=8",
+            ]
+        )
+    )
     assert trainer.parameter_sync_step == 2
-    assert trainer.replay_buffer.parameter_sync_step == 2
 
 
 def test_init_tokenizer_wires_omni_model_config():

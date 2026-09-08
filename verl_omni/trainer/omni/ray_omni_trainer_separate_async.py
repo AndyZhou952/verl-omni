@@ -31,10 +31,9 @@ class OmniPPOTrainerSeparateAsync(PPOTrainerSeparateAsync):
     def __init__(self, config):
         super().__init__(config)
         # PPOTrainer reads v1.{trainer_mode}.parameter_sync_step (absent -> 1), but the
-        # parent syncs on v1.separate_async; use the validated key, and mirror it onto
-        # the ReplayBuffer, which was built from v1.{trainer_mode} before this runs.
+        # parent syncs on v1.separate_async; use the validated key. ReplayBuffer
+        # staleness is gated by max_off_policy_threshold alone — do not write this knob.
         self.parameter_sync_step = config.trainer.v1.separate_async.get("parameter_sync_step", 1)
-        self.replay_buffer.parameter_sync_step = self.parameter_sync_step
 
     def _init_tokenizer(self):
         # Skip super(): OmniModelConfig loads tokenizer/processor via the registered adapter.

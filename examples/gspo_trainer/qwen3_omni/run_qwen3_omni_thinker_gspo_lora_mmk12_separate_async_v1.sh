@@ -4,6 +4,11 @@
 # Generation runs one batch ahead of training; weights sync to the standalone
 # replicas every trainer.v1.separate_async.parameter_sync_step steps.
 #
+# Requirements:
+#   - actor_rollout_ref.rollout.nnodes > 0  (standalone rollout on dedicated GPUs)
+#   - actor_rollout_ref.rollout.checkpoint_engine.backend != naive
+#   - data.train_batch_size == parameter_sync_step * actor.ppo_mini_batch_size.
+#
 # Data preparation (run once):
 #   pip install math-verify
 #   python examples/gspo_trainer/data_process/mmk12.py \
@@ -88,7 +93,7 @@ python3 -m verl_omni.trainer.main_omni \
     reward.custom_reward_function.name=compute_score \
     trainer.v1.trainer_mode=omni_separate_async \
     trainer.v1.separate_async.num_warmup_batches=1 \
-    trainer.v1.separate_async.parameter_sync_step=1 \
+    trainer.v1.separate_async.parameter_sync_step=8 \
     trainer.val_before_train=false \
     trainer.balance_batch=True \
     trainer.critic_warmup=0 \

@@ -1,16 +1,16 @@
 (separate_async_omni)=
 # Separate-Async RL Training for Qwen3-Omni
 
-Last updated: 08/07/2026
+Last updated: 09/08/2026
 
 `trainer.v1.trainer_mode=omni_separate_async` runs training and rollout on
 separate GPU pools for omni AR models (Qwen3-Omni thinker). Standalone rollout
 replicas generate one batch ahead of training; the trainer pushes weights to
 them every `trainer.v1.separate_async.parameter_sync_step` steps over a
 non-naive checkpoint engine (nccl/nixl/...). Generations aborted by a weight
-sync are resubmitted and finished under the new weights (restarted from the
-prompt on today's AR server — see Limitations), with `min/max_global_steps`
-recording the weight-version span of every sample.
+sync continue from the tokens already produced and finish under the new
+weights, with `min/max_global_steps` recording the weight-version span of
+every sample.
 
 ## When to use
 
@@ -49,9 +49,11 @@ uses GSPO + GRPO advantages with LoRA. Key overrides:
 | `trainer.v1.separate_async.parameter_sync_step` | 4 | push weights to standalone replicas every N steps |
 | `actor_rollout_ref.rollout.checkpoint_engine.backend` | — | must be non-naive (`nccl`, `nixl`, `mooncake`) |
 
-Constraints enforced at startup: rollout GPUs > 0 and a non-naive checkpoint
-backend. The trainer reads `parameter_sync_step` from `v1.separate_async` (the
-key the parent validates and syncs on), not from a mode-specific stub.
+Constraints enforced at startup: rollout GPUs > 0, a non-naive checkpoint
+backend, and `data.train_batch_size == parameter_sync_step * ppo_mini_batch_size`.
+The trainer reads `parameter_sync_step` from `v1.separate_async` (the key the
+parent validates and syncs on), not from a mode-specific stub. The MMK12
+example sets `parameter_sync_step=8` so `128 == 8 * 16`.
 
 LoRA recipes should set `actor_rollout_ref.model.lora.merge=False` so weight
 sync ships only adapter tensors (applied on the replicas via the LoRA-aware
@@ -88,27 +90,31 @@ For a parity check against the synchronous baseline, run the same recipe with
 
 ## Limitations
 
-- **Abort semantics (today's AR server).** `abort_all_requests` drains in-flight
-  requests first (up to its drain window), so a weight sync can wait on the
-  freshest generations; raise `parameter_sync_step` if sync stalls dominate.
-  Requests that get hard-aborted are synthesized with zero generated tokens, so
-  a "continuation" restarts generation from the prompt, and a hard abort with
-  log-probs requested can mark the group as failed. True mid-sequence resume
-  for AR omni arrives with the #290 server hardening.
+- **Abort semantics (RFC #320 §2.1, post-#497).** Weight sync is
+  abort-then-pause: `abort_all_requests` issues a timeout-bounded, ACK'd
+  `engine.abort` while generate is live, then `pause_generation(mode="abort")`
+  as the idle boundary and admission hold. Success-path terminals come from
+  the engine with the tokens generated so far (failure-path synthesis is
+  enqueue-then-raise only). `FullyAsyncLLMServerClient` continues from
+  `prompt + partial_tokens` under the new weights and shrinks the remaining
+  token budget — pinned by `test_omni_rollout_recovery_on_cpu.py` (budgets
+  `[8, 6]`). Scope is thinker-only / single-stage AR; multi-stage abort is
+  still broken upstream.
 - Single-node standalone replicas for AR omni (`vLLMOmniHttpServer.run_headless`
   is not implemented).
 - Hybrid (colocated) replicas are not idle: they serve the first sampling
   window and every validation (kept current via the colocated checkpoint
   engine), and sleep during training phases.
-- **Stale caches after weight sync.** `AsyncOmni.pause_generation()` does not
-  clear the prefix/mm/encoder caches (upstream no-op stubs), so entries
-  computed under old weights could be reused after a sync. The example and
-  smoke scripts run with `enable_prefix_caching=False`; accepted residual
-  risk until upstream implements cache invalidation on abort (RFC #320
-  Future Work).
-- Decoupled PPO is not active at this verl pin: the parent trainer forces
-  bypass-mode rollout correction and never calls the actor's CPU
-  save/restore (`OmniDetachActorWorker` wires it for when upstream enables
-  it). At `parameter_sync_step > 1`, training consumes rollout log-probs
-  that lag the actor by design — validate convergence before raising it.
+- **Prefix cache after weight sync.** Abort-then-pause clears the frontend mm
+  cache when `reset_prefix_cache=True` (#497). Prefix-hash reuse after
+  sleep/wake is still an upstream residual (vllm-omni#6442); the example and
+  smoke keep `enable_prefix_caching=False`.
+- **Decoupled PPO is the default.** Generated omni config ships
+  `algorithm.rollout_correction.bypass_mode: false`, and nothing in this
+  trainer forces bypass, so the parent's save/restore path
+  (`PPOTrainerSeparateAsync._compute_old_log_prob`) runs on GPU.
+  `OmniDetachActorWorker` supplies the CPU snapshot used when
+  `parameter_sync_step > 1`. The MMK12 example sets `parameter_sync_step=8`
+  so that path is engaged. Cover save/restore plus hard-abort/weight-sync
+  in the RFC #320 §6.2 gate before raising the knob further.
 - NPU AR sleep/wake relies on vllm-ascend behavior.
