@@ -842,7 +842,9 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
         from config for every role instead of only when building the rollout
         engine.
         """
-        # used for LoRA (base_sync_done is unused in merge-only mode but kept for Phase 2 adapter path)
+        # LoRA: True while the rollout already holds the base weights, so
+        # adapter-only syncs can skip resending them. Only a dummy load_format
+        # starts False (the rollout never loaded real base weights).
         self.base_sync_done: bool = "dummy" not in self.config.rollout.load_format
         self.layered_summon = self.config.rollout.get("layered_summon", False)
         # diffusion-only dual-adapter knob; the omni rollout config has no such field
