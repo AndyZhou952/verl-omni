@@ -54,7 +54,9 @@ async def test_continuation_resends_media_merges_tokens_and_shrinks_budget():
             extra_fields={"global_steps": 5},
         ),
     ]
-    client = _client(FullyAsyncLLMServerClient)
+    # Upstream generate() reads self.config (hasattr(self.config, "async_training")).
+    # v1 trainers do not set async_training, so hasattr is False and abort retries.
+    client = _client(FullyAsyncLLMServerClient, config=SimpleNamespace())
     media = {"image_data": ["img"], "video_data": None, "audio_data": ["aud"]}
     # sampling_params is mutated in place, so capture the budget at call time.
     seen_budgets = []
