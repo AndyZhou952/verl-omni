@@ -212,7 +212,7 @@ class vLLMOmniHttpServer(vLLMHttpServer):
         )
 
     # -----------------------------------------------------------------------
-    # wake_up hook: full wake must include kv_cache (vllm-omni#4473)
+    # wake_up hook: full wake must include kv_cache
     # -----------------------------------------------------------------------
 
     def _get_wake_up_tags(self) -> list[str]:

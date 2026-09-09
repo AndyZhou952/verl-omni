@@ -107,7 +107,7 @@ For a parity check against the synchronous baseline, run the same recipe with
   engine), and sleep during training phases.
 - **Prefix cache after weight sync.** Abort-then-pause clears the frontend mm
   cache when `reset_prefix_cache=True` (#497). Prefix-hash reuse after
-  sleep/wake is still an upstream residual (vllm-omni#6442); the example and
+  sleep/wake is still an upstream vllm-omni residual; the example and
   smoke keep `enable_prefix_caching=False`.
 - **Decoupled PPO is the default.** Generated omni config ships
   `algorithm.rollout_correction.bypass_mode: false`, and nothing in this

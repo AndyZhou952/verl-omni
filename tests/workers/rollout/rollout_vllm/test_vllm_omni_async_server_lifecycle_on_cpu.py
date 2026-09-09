@@ -550,8 +550,8 @@ async def test_release_kv_cache_holds_admission_until_resume():
 
     CheckpointEngineManager.update_weights aborts, then release_kv_cache,
     then NCCL, then resume_kv_cache. If release resumes, FullyAsyncLLMServerClient
-    reissues into AsyncOmni.generate() and hits vllm-omni#4473
-    ("Currently sleeping tags: ['kv_cache']").
+    reissues into AsyncOmni.generate() while kv_cache is still asleep and
+    generation fails ("Currently sleeping tags: ['kv_cache']").
     """
     engine = _FakeAsyncOmni()
     server = _make_server(engine)
