@@ -789,6 +789,12 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                     mesh_name="teacher", **next(iter(self.teachers.values())).get_dispatch_collect()
                 )
 
+        # Rollout weight-sync knobs. Initialized for every role, not only when
+        # "rollout" is in self.role: with a separate rollout, update_weights()
+        # and the LoRA gather run on the actor worker and must not depend on
+        # rollout-role-only attributes.
+        self._init_weight_sync_knobs(model_config)
+
         # 3. build rollout engine
         if "rollout" in self.role:
             rollout_config: RolloutConfig = omega_conf_to_dataclass(self.config.rollout)
@@ -812,14 +818,6 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                 config=rollout_config, model_config=model_config, device_mesh=rollout_device_mesh
             )
 
-            # used for LoRA (base_sync_done is unused in merge-only mode but kept for Phase 2 adapter path)
-            self.base_sync_done: bool = "dummy" not in self.config.rollout.load_format
-            self.layered_summon = self.config.rollout.get("layered_summon", False)
-            # diffusion-only dual-adapter knob; the omni rollout config has no such field
-            self.rollout_adapter: str = self.config.rollout.get("rollout_adapter", "default")
-            self.peft_merge: bool = model_config.lora.get("merge", False)
-            self._zmq_update_seq = 0
-
         # 4. build checkpoint engine
         if "actor" in self.role:
             checkpoint_engine_config = omega_conf_to_dataclass(self.config.rollout.checkpoint_engine)
@@ -835,6 +833,22 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
 
         # Free cached GPU memory so colocated vLLM processes can see it via cudaMemGetInfo
         aggressive_empty_cache(force_sync=True)
+
+    def _init_weight_sync_knobs(self, model_config):
+        """Set rollout weight-sync state needed by actor-side methods.
+
+        update_weights() and the LoRA gather read these on workers whose role
+        may not include "rollout" (separate rollout layout), so they are derived
+        from config for every role instead of only when building the rollout
+        engine.
+        """
+        # used for LoRA (base_sync_done is unused in merge-only mode but kept for Phase 2 adapter path)
+        self.base_sync_done: bool = "dummy" not in self.config.rollout.load_format
+        self.layered_summon = self.config.rollout.get("layered_summon", False)
+        # diffusion-only dual-adapter knob; the omni rollout config has no such field
+        self.rollout_adapter: str = self.config.rollout.get("rollout_adapter", "default")
+        self.peft_merge: bool = model_config.lora.get("merge", False)
+        self._zmq_update_seq = 0
 
     @register(dispatch_mode=make_nd_compute_dataproto_dispatch_fn(mesh_name="ref"))
     @DistProfiler.annotate(color="olive", role="infer_ref_batch")
