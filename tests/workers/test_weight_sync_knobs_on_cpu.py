@@ -51,9 +51,7 @@ def test_weight_sync_knobs_default_for_config_without_optional_fields():
 
 
 def test_weight_sync_knobs_read_diffusion_dual_adapter_and_lora_merge():
-    rollout_cfg = SimpleNamespace(
-        load_format="dummy_model_dt", rollout_adapter="adapter_b", layered_summon=True
-    )
+    rollout_cfg = SimpleNamespace(load_format="dummy_model_dt", rollout_adapter="adapter_b", layered_summon=True)
     model_config = SimpleNamespace(lora={"merge": True})
     worker = _bare_worker(rollout_cfg)
 
