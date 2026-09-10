@@ -90,7 +90,7 @@ For a parity check against the synchronous baseline, run the same recipe with
 
 ## Limitations
 
-- **Abort semantics (RFC #320 §2.1, post-#497).** Weight sync is
+- **Abort semantics.** Weight sync is
   abort-then-pause: `abort_all_requests` issues a timeout-bounded, ACK'd
   `engine.abort` while generate is live, then `pause_generation(mode="abort")`
   as the idle boundary and admission hold. Success-path terminals come from
@@ -106,7 +106,7 @@ For a parity check against the synchronous baseline, run the same recipe with
   window and every validation (kept current via the colocated checkpoint
   engine), and sleep during training phases.
 - **Prefix cache after weight sync.** Abort-then-pause clears the frontend mm
-  cache when `reset_prefix_cache=True` (#497). Prefix-hash reuse after
+  cache when `reset_prefix_cache=True`. Prefix-hash reuse after
   sleep/wake is still an upstream vllm-omni residual; the example and
   smoke keep `enable_prefix_caching=False`.
 - **Decoupled PPO is the default.** Generated omni config ships
@@ -116,5 +116,5 @@ For a parity check against the synchronous baseline, run the same recipe with
   `OmniDetachActorWorker` supplies the CPU snapshot used when
   `parameter_sync_step > 1`. The MMK12 example sets `parameter_sync_step=8`
   so that path is engaged. Cover save/restore plus hard-abort/weight-sync
-  in the RFC #320 §6.2 gate before raising the knob further.
+  before raising the knob further.
 - NPU AR sleep/wake relies on vllm-ascend behavior.
