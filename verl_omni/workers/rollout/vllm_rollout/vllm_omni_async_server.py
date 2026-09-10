@@ -21,7 +21,6 @@ from typing import Any, Optional
 import ray
 import torch
 import vllm_omni.entrypoints.cli.serve
-from verl.utils.net_utils import get_free_port
 from verl.workers.config import RolloutConfig
 from verl.workers.rollout.replica import RolloutMode, TokenOutput
 from verl.workers.rollout.utils import run_uvicorn
@@ -37,6 +36,7 @@ from vllm_omni.entrypoints import AsyncOmni
 from vllm_omni.entrypoints.openai.api_server import omni_init_app_state
 from vllm_omni.lora.request import LoRARequest
 
+from verl_omni.utils.net_utils import get_non_ephemeral_free_port
 from verl_omni.workers.config import DiffusionModelConfig, DiffusionRolloutConfig, OmniModelConfig
 from verl_omni.workers.rollout.replica import DiffusionOutput
 from verl_omni.workers.rollout.vllm_rollout.vllm_omni_ar_strategy import ARStrategy
@@ -157,8 +157,12 @@ class vLLMOmniHttpServer(vLLMHttpServer):
         if engine_args.get("seed") is None:
             engine_args.pop("seed", None)
 
-        diffusion_master_port, diffusion_master_sock = get_free_port("127.0.0.1", with_alive_sock=True)
-        diffusion_master_sock.close()
+        # The port stays unbound until vllm-omni's rank-0 DiffusionWorker
+        # listens on it; see get_non_ephemeral_free_port for why it must not
+        # come from the ephemeral range.
+        # TODO (mike): drop once vllm-omni passes a FileStore-backed
+        # distributed_init_method to its workers instead of env:// MASTER_PORT.
+        diffusion_master_port = get_non_ephemeral_free_port("127.0.0.1")
 
         os.environ["MASTER_ADDR"] = "127.0.0.1"
         os.environ["MASTER_PORT"] = str(diffusion_master_port)
@@ -191,12 +195,30 @@ class vLLMOmniHttpServer(vLLMHttpServer):
         # TODO (mike): support multi node
         raise NotImplementedError("vLLM-Omni headless mode is not implemented yet.")
 
+    async def collective_rpc(
+        self,
+        method: Any,
+        timeout: float | None = None,
+        args: tuple = (),
+        kwargs: dict[str, Any] | None = None,
+    ):
+        """Dispatch a shared RPC to the stages selected by the active strategy."""
+        await self.engine.collective_rpc(
+            method=method,
+            timeout=timeout,
+            args=args,
+            kwargs=kwargs,
+            stage_ids=self._generate_strategy.collective_rpc_stage_ids(method),
+        )
+
     # -----------------------------------------------------------------------
-    # wake_up hook: Omni does not restore KV cache on wake-up
+    # wake_up hook: full wake must include kv_cache
     # -----------------------------------------------------------------------
 
     def _get_wake_up_tags(self) -> list[str]:
-        return ["weights"]
+        # AsyncOmni.generate() rejects leftover sleeping tags. Weights-only left
+        # kv_cache asleep and every generate() failed.
+        return ["kv_cache", "weights"]
 
     def _resolve_sleep_level(self) -> int:
         """
@@ -242,7 +264,13 @@ class vLLMOmniHttpServer(vLLMHttpServer):
         self._invalidate_lora_request_cache()
 
     async def release_kv_cache(self):
-        """Free cache around a weight sync without discarding Omni weights."""
+        """Free cache around a weight sync without discarding Omni weights.
+
+        Sleeps both tags then wakes weights only so NCCL can write into the
+        existing buffers. Do not resume generation here: kv_cache is still
+        asleep and AsyncOmni.generate() rejects that state. resume_kv_cache()
+        restores the cache and re-opens admission after the sync.
+        """
         if self.node_rank != 0 or not self.config.free_cache_engine:
             return
         if self.rollout_mode == RolloutMode.COLOCATED:
@@ -253,11 +281,10 @@ class vLLMOmniHttpServer(vLLMHttpServer):
         self._invalidate_lora_request_cache()
         acks = await self.engine.wake_up(tags=["weights"])
         self._validate_acks("wake_up", acks)
-        await self.engine.resume_generation()
         self._invalidate_lora_request_cache()
 
     async def resume_kv_cache(self):
-        """Restore after a weight sync."""
+        """Restore kv_cache after a weight sync and re-open generate admission."""
         if self.node_rank != 0 or not self.config.free_cache_engine:
             return
         if self.rollout_mode == RolloutMode.COLOCATED:
@@ -480,8 +507,12 @@ class vLLMOmniReplica(vLLMReplica):
         model_config: DiffusionModelConfig | OmniModelConfig,
         gpus_per_node: int = 8,
         is_reward_model: bool = False,
+        is_teacher_model: bool = False,
+        name_suffix: str = "",
     ):
-        super().__init__(replica_rank, config, model_config, gpus_per_node, is_reward_model)
+        super().__init__(
+            replica_rank, config, model_config, gpus_per_node, is_reward_model, is_teacher_model, name_suffix
+        )
         self.server_class = ray.remote(vLLMOmniHttpServer)
 
     def _get_server_name_prefix(self) -> str:
